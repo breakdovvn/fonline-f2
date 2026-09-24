@@ -1052,6 +1052,10 @@
             if (item1 != null) {
                 ::ChosenActions::SetAction({::Tla::ChosenMoveItem, item1.Id, item1.Count, CritterItemSlot::Secondary, 0, 0, 0}, false, true);
             }
+            else {
+                // Обе руки пусты — рукопашная: смена руки (удар рукой <-> удар ногой).
+                ::Parameters::SwitchUnarmedHand(chosen);
+            }
         }
     }
 }
@@ -2199,7 +2203,40 @@
 //           "OnHide": null,
 //           "OnAppear": null,
 //           "OnDisappear": null,
-//           "OnDraw": null,
+//           "OnDraw":
+{
+    {
+        {
+            // Пустой слот (рукопашная): ячейка MainItemSlotCell не создаётся, поэтому тип удара
+            // и стоимость ОД рисуем прямо на плейте.
+            if (!HasChosen) {
+                return;
+            }
+            Critter chosen = Chosen;
+            if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+                return;
+            }
+
+            string text = ::ClientMain::UnarmedModeText();
+            if (text == "") {
+                return;
+            }
+
+            Game.DrawText(text,
+                          ipos(AbsolutePos.x + 6, AbsolutePos.y + 22),
+                          isize(Size.width - 12, Size.height - 24),
+                          Color::Text,
+                          TextFormat(FontType::Default, FontFlag(int(FontFlag::TruncateLine)), 0));
+
+            if (::ClientMain::UnarmedAimed()) {
+                Game.DrawSprite(::ClientMain::UnarmedAimSpriteId(),
+                                fpos(AbsolutePos.x + 162, AbsolutePos.y + 41),
+                                fsize(18, 18),
+                                Color::Neutral);
+            }
+        }
+    }
+}
 //           "OnPostDraw": null,
 //           "OnMove": null,
 //           "OnMouseDown":
@@ -2856,7 +2893,16 @@
 //                       "CheckTransparentOnHit": false,
 //                       "GlobalScope": null,
 //                       "ClassFields": null,
-//                       "OnInit": null,
+//                       "OnInit":
+{
+    {
+        {
+            // Ячейка может существовать без предмета, и тогда OnDrawItem не вызывается —
+            // поэтому по умолчанию мишень скрыта, а показывается только в прицельном режиме.
+            ::GuiScreensExt::NeedSprite(BackgroundImage).Hidden = true;
+        }
+    }
+}
 //                       "OnShow": null,
 //                       "OnHide": null,
 //                       "OnAppear": null,

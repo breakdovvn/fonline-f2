@@ -76,9 +76,118 @@ nanotime MouseStayTick = ZERO_NANOTIME;
 // при входе в игру, а RefreshItemViews перестраивает все виды сразу.
 bool ItemViewsDirty = false;
 
+// Сервер меняет слот предмета свойством CritterSlot (ChangeItemSlot) без событий add/remove,
+// поэтому OnItemInvIn/Out не приходят и списки слотов не перестраиваются. Сравниваем
+// экипировку со снимком и помечаем виды устаревшими при любом изменении слота.
+ident CachedMainItemId = ZERO_IDENT;
+ident CachedSecondaryItemId = ZERO_IDENT;
+ident CachedArmorItemId = ZERO_IDENT;
+
+void CheckEquippedItemsChanged()
+{
+    if (!HasChosen) {
+        return;
+    }
+
+    Critter chosen = Chosen;
+    Item? mainItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+    Item? secondaryItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Secondary);
+    Item? armorItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Armor);
+
+    ident mainId = mainItem != null ? mainItem.Id : ZERO_IDENT;
+    ident secondaryId = secondaryItem != null ? secondaryItem.Id : ZERO_IDENT;
+    ident armorId = armorItem != null ? armorItem.Id : ZERO_IDENT;
+
+    if (mainId != CachedMainItemId || secondaryId != CachedSecondaryItemId || armorId != CachedArmorItemId) {
+        CachedMainItemId = mainId;
+        CachedSecondaryItemId = secondaryId;
+        CachedArmorItemId = armorId;
+        ItemViewsDirty = true;
+    }
+}
+
+// Убирает декоративный префикс вида "!Unarmed!" в именах рукопашных прототипов.
+string CleanTaggedName(string name)
+{
+    if (name.length() >= 2 && name.substr(0, 1) == "!") {
+        string rest = name.substr(1);
+        int end = rest.find("!");
+        if (end >= 0) {
+            name = rest.substr(end + 1);
+        }
+    }
+
+    int lead = 0;
+    while (lead < int(name.length()) && name.substr(lead, 1) == " ") {
+        lead++;
+    }
+    if (lead > 0) {
+        name = name.substr(lead);
+    }
+
+    return name;
+}
+
+// Текст пустого слота HUD для рукопашной: текущий удар (по прототипу) и стоимость ОД.
+// Пустая строка, когда в слоте Main есть реальное оружие — там работает ячейка MainItemSlotCell.
+string UnarmedModeText()
+{
+    if (!HasChosen) {
+        return "";
+    }
+
+    Critter chosen = Chosen;
+    if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+        return "";
+    }
+
+    ProtoItem? proto = ::CritterItem::GetSlotItemProto(chosen);
+    if (proto == null) {
+        return "";
+    }
+
+    int mode = chosen.HandsItemMode;
+    int apCost = ::Parameters::GetItemUseApCost(chosen, proto, mode);
+
+    string name = CleanTaggedName(Game.GetText(::MsgStr::ProtoItemNameKey(proto.ProtoId)));
+
+    return name + "   " + apCost;
+}
+
+// Прицельный режим пустого слота HUD (иконка-мишень вместо слова "прицельный").
+bool UnarmedAimed()
+{
+    if (!HasChosen) {
+        return false;
+    }
+
+    Critter chosen = Chosen;
+    if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+        return false;
+    }
+
+    return ::WeaponHelpers::WeaponModeAim(chosen.HandsItemMode) != HitLocations::LocationNone;
+}
+
+// Ленивая загрузка спрайта мишени (art/intrface/aim_pic.png), как у AimPic в HUD-ячейке.
+Sprite::Sprite UnarmedAimSprite = Sprite::Sprite();
+bool UnarmedAimSpriteLoaded = false;
+
+uint UnarmedAimSpriteId()
+{
+    if (!UnarmedAimSpriteLoaded) {
+        UnarmedAimSprite = Sprite::Sprite();
+        UnarmedAimSpriteLoaded = UnarmedAimSprite.Load("art/intrface/aim_pic.png");
+    }
+
+    return UnarmedAimSprite.Id;
+}
+
 [[Event]]
 void loop()
 {
+    CheckEquippedItemsChanged();
+
     if (ItemViewsDirty) {
         ItemViewsDirty = false;
         ::ClientItems::RefreshItemViews();
@@ -854,12 +963,18 @@ string GenericDescription(int descType, int& offsX, int& offsY)
         result += "---------------------\n";
 
         AbstractItem weaponMain = CritterItem::GetActive(chosen);
+        if (cast<Item?>(weaponMain) == null) {
+            weaponMain = ::Parameters::BestUnarmedProto(chosen, false);
+        }
         int use = WeaponHelpers::WeaponModeUse(weaponMain.Mode);
         if (use > 2) {
             use = 0;
         }
 
-        result += Game.GetText(MsgStr::ItemNameKey(weaponMain)) + "\n";
+        bool mainUnarmed = cast<Item?>(weaponMain) == null;
+        result += (mainUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem)))
+                               : CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponMain)))) +
+                  "\n";
 
         if (weaponMain.Type == ItemType::Weapon) {
             result += Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvDmg))) + " ";
@@ -899,12 +1014,18 @@ string GenericDescription(int descType, int& offsX, int& offsY)
         result += "---------------------\n";
 
         AbstractItem weaponExt = CritterItem::GetActive(chosen, CritterItemSlot::Secondary);
+        if (cast<Item?>(weaponExt) == null) {
+            weaponExt = ::Parameters::BestUnarmedProto(chosen, true);
+        }
         use = WeaponHelpers::WeaponModeUse(weaponExt.Mode);
         if (use > 2) {
             use = 0;
         }
 
-        result += Game.GetText(MsgStr::ItemNameKey(weaponExt)) + "\n";
+        bool extUnarmed = cast<Item?>(weaponExt) == null;
+        result += (extUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem)))
+                              : CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponExt)))) +
+                  "\n";
 
         if (weaponExt.Type == ItemType::Weapon) {
             result += Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvDmg))) + " ";

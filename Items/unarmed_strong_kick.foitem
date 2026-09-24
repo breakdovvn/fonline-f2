@@ -25,5 +25,5 @@ Type = Weapon
 IsHidden = True
 DisableEgg = True
 
-$Text russ = "!Unarmed!   strong kick"
-$Text engl = "!Unarmed!   strong kick"
+$Text russ = "Сильный удар ногой"
+$Text engl = "Strong kick"

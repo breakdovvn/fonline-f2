@@ -644,6 +644,28 @@ hstring[] UnarmedWeapons = {
     Content::Item::unarmed_piercing_kick,
 };
 
+// Категории рукопашных приёмов. Внутри категории игрок всегда получает лучший доступный
+// приём (как в оригинале приёмы заменяются по мере роста навыка), переключение — рука <-> нога.
+hstring[] UnarmedPunchMoves = {
+    EMPTY_HSTRING, // Content::Item::default_weapon — Punch
+    Content::Item::unarmed_strong_punch,
+    Content::Item::unarmed_hammer_punch,
+    Content::Item::unarmed_haymaker,
+    Content::Item::unarmed_jab,
+    Content::Item::unarmed_palm_strike,
+    Content::Item::unarmed_piercing_strike,
+};
+
+hstring[] UnarmedKickMoves = {
+    Content::Item::unarmed_kick,
+    Content::Item::unarmed_strong_kick,
+    Content::Item::unarmed_snap_kick,
+    Content::Item::unarmed_power_kick,
+    Content::Item::unarmed_hip_kick,
+    Content::Item::unarmed_hook_kick,
+    Content::Item::unarmed_piercing_kick,
+};
+
 bool VerifyUnarmedItem(Critter cr, hstring pid)
 {
     if (pid == EMPTY_HSTRING) {
@@ -666,6 +688,25 @@ bool VerifyUnarmedItem(Critter cr, hstring pid)
     return true;
 }
 
+// Лучший доступный приём в категории (список упорядочен от базового к продвинутым).
+hstring BestUnarmedMove(Critter cr, hstring[] moves)
+{
+    for (int i = moves.length() - 1; i >= 0; i--) {
+        if (VerifyUnarmedItem(cr, moves[i])) {
+            return moves[i];
+        }
+    }
+
+    return moves[0];
+}
+
+// Прототип лучшего доступного приёма для руки (kick == true — удар ногой).
+ProtoItem BestUnarmedProto(Critter cr, bool kick)
+{
+    hstring pid = BestUnarmedMove(cr, kick ? UnarmedKickMoves : UnarmedPunchMoves);
+    return Game.GetProtoItem(pid != EMPTY_HSTRING ? pid : Content::Item::default_weapon);
+}
+
 // Только предметы с явным признаком таймера должны открывать окно выбора задержки.
 bool IsTimedUseItem(AbstractItem item)
 {
@@ -681,54 +722,24 @@ void SwitchUnarmedWeapon(Critter cr, bool next)
     uint8 use = mode & 0xF;
     uint8 aim = mode >> 4;
 
-    if (next && aim == HitLocations::LocationNone && !cr.IsNoAim && WeaponHelpers::WeaponAim(proto, use)) {
-        aim = HitLocations::LocationTorso;
-        cr.HandsItemMode = use | (aim << 4);
-        return;
+    // ПКМ/колесо переключают обычный/прицельный режим текущей руки; смена руки — кнопкой смены слота.
+    if (aim != HitLocations::LocationNone) {
+        cr.HandsItemMode = use;
     }
-
-    if (!next && aim != HitLocations::LocationNone) {
-        aim = HitLocations::LocationNone;
-        cr.HandsItemMode = use | (aim << 4);
-        return;
+    else if (!cr.IsNoAim && WeaponHelpers::WeaponAim(proto, use)) {
+        cr.HandsItemMode = use | (HitLocations::LocationTorso << 4);
     }
+}
 
-    int index = UnarmedWeapons.find(curPid);
-    if (index != -1) {
-        int startIndex = index;
-        while (true) {
-            index += (next ? 1 : -1);
-            if (index >= int(UnarmedWeapons.length())) {
-                index = 0;
-            }
-            else if (index < 0) {
-                index = UnarmedWeapons.length() - 1;
-            }
+// Смена руки для рукопашной: удар рукой (Main) <-> удар ногой (Secondary).
+void SwitchUnarmedHand(Critter cr)
+{
+    hstring bestPunch = BestUnarmedMove(cr, UnarmedPunchMoves);
+    hstring bestKick = BestUnarmedMove(cr, UnarmedKickMoves);
 
-            if (index == startIndex) {
-                break;
-            }
-
-            if (VerifyUnarmedItem(cr, UnarmedWeapons[index])) {
-                break;
-            }
-        }
-    }
-    else {
-        index = 0;
-    }
-
-    hstring pid = UnarmedWeapons[index];
-    if (pid != curPid) {
-        cr.HandsItemMode = 0;
-        cr.HandsProtoItemId = pid;
-
-        proto = Game.GetProtoItem(pid != EMPTY_HSTRING ? pid : Content::Item::default_weapon);
-        if (!next && !cr.IsNoAim && WeaponHelpers::WeaponAim(proto, 0)) {
-            aim = HitLocations::LocationTorso;
-            cr.HandsItemMode = aim << 4;
-        }
-    }
+    bool curIsKick = UnarmedKickMoves.find(cr.HandsProtoItemId) != -1;
+    cr.HandsProtoItemId = curIsKick ? bestPunch : bestKick;
+    cr.HandsItemMode = 0;
 }
 
 void UseMainItem()

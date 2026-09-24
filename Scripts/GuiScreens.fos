@@ -2747,6 +2747,10 @@ namespace Game
             if (item1 != null) {
                 ::ChosenActions::SetAction({::Tla::ChosenMoveItem, item1.Id, item1.Count, CritterItemSlot::Secondary, 0, 0, 0}, false, true);
             }
+            else {
+                // Обе руки пусты — рукопашная: смена руки (удар рукой <-> удар ногой).
+                ::Parameters::SwitchUnarmedHand(chosen);
+            }
         }
     };
 
@@ -3022,9 +3026,41 @@ namespace Game
     {
         void OnConstruct() override
         {
+            SetHasOnDraw(true);
             SetPosition(426, 52);
             SetSize(188, 67);
             SetPressedImage("art/intrface/iface_item.png");
+        }
+
+        void OnDraw() override
+        {
+            // Пустой слот (рукопашная): ячейка MainItemSlotCell не создаётся, поэтому тип удара
+            // и стоимость ОД рисуем прямо на плейте.
+            if (!HasChosen) {
+                return;
+            }
+            Critter chosen = Chosen;
+            if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+                return;
+            }
+
+            string text = ::ClientMain::UnarmedModeText();
+            if (text == "") {
+                return;
+            }
+
+            Game.DrawText(text,
+                          ipos(AbsolutePos.x + 6, AbsolutePos.y + 22),
+                          isize(Size.width - 12, Size.height - 24),
+                          Color::Text,
+                          TextFormat(FontType::Default, FontFlag(int(FontFlag::TruncateLine)), 0));
+
+            if (::ClientMain::UnarmedAimed()) {
+                Game.DrawSprite(::ClientMain::UnarmedAimSpriteId(),
+                                fpos(AbsolutePos.x + 162, AbsolutePos.y + 41),
+                                fsize(18, 18),
+                                Color::Neutral);
+            }
         }
 
         void OnMouseDown(MouseButton button) override
@@ -3228,6 +3264,13 @@ namespace Game
             SetSize(18, 18);
             SetNotHittable(true);
             SetBackgroundImage("art/intrface/aim_pic.png");
+        }
+
+        void OnInit() override
+        {
+            // Ячейка может существовать без предмета, и тогда OnDrawItem не вызывается —
+            // поэтому по умолчанию мишень скрыта, а показывается только в прицельном режиме.
+            ::GuiScreensExt::NeedSprite(BackgroundImage).Hidden = true;
         }
 
         void OnDrawItem(Item item, Gui::Object cell, int cellIndex) override

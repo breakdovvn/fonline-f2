@@ -27,5 +27,5 @@ Type = Weapon
 IsHidden = True
 DisableEgg = True
 
-$Text russ = "!Unarmed!   palm strike"
+$Text russ = "Удар ладонью"
 $Text engl = "!Unarmed!   palm strike"
