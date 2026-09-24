@@ -1,0 +1,40 @@
+diff --git a/Source/Tools/Baker.cpp b/Source/Tools/Baker.cpp
+index 6dd339af99..54bf7bc0bd 100644
+--- a/Source/Tools/Baker.cpp
++++ b/Source/Tools/Baker.cpp
+@@ -299,6 +299,8 @@ struct MasterBaker::PackBakeContext
+     std::atomic_int BakedFiles {};
+     mutex BakedFilePathsLocker {};
+     unordered_set<string> BakedFilePaths FO_TSA_GUARDED_BY(BakedFilePathsLocker) {};
++    // Inputs own the deletion claim, written outputs own the spelling they must keep on disk
++    unordered_set<string> BakedOutputPaths FO_TSA_GUARDED_BY(BakedFilePathsLocker) {};
+     bool FirstBake {};
+     bool OutputAdded {};
+     TimeMeter BakingTime {};
+@@ -503,6 +505,11 @@ auto MasterBaker::PreparePackContext(const ResourcePackInfo& res_pack, const str
+     };
+ 
+     auto write_data = [context = pack_bake_context_ptr](string_view path, span<const uint8_t> baked_data) mutable -> BakingWriteResult {
++        {
++            scoped_lock lock {context->BakedFilePathsLocker};
++            context->BakedOutputPaths.emplace(path);
++        }
++
+         string res_path = strex(context->OutputDir).combine_path(path).str();
+ 
+         if (!fs_compare_file_content(res_path, baked_data)) {
+@@ -656,7 +663,13 @@ auto MasterBaker::CollectExpectedOutputs(vector<unique_ptr<PackBakeContext>>& pa
+         for (const auto& res_name : bake_context->BakedFilePaths) {
+             string expected_path = strex(bake_context->PackName).combine_path(res_name);
+             expected.ResourceNames.emplace(ExcludeAllExt(expected_path));
+-            expected.Paths.insert_or_assign(strex(expected_path).lower().str(), expected_path);
++        }
++
++        // A baker may rename its output, so the spelling the sweep enforces is the written one; taken from
++        // the input name it would rename a deliberate rename straight back
++        for (const auto& output_name : bake_context->BakedOutputPaths) {
++            string output_path = strex(bake_context->PackName).combine_path(output_name);
++            expected.Paths.insert_or_assign(strex(output_path).lower().str(), output_path);
+         }
+     }
+ 
