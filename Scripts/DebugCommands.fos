@@ -1,0 +1,220 @@
+// DebugCommands — серверные админ/дебаг-команды из игровой консоли (префикс "~", см. Messaging::OnConsoleMessage).
+// Гейт: Debug.AllowConsoleCommands (Common, по умолчанию выключено) — на боевом сервере команды недоступны.
+namespace DebugCommands
+{
+
+///@ Setting Common bool Debug.AllowConsoleCommands
+
+///@ RemoteCall Server DebugRunCommand(string text)
+
+#if SERVER
+
+// Точка входа из клиента: проверяет гейт, берёт управляемого криттера и отдаёт ответ в окно сообщений.
+[[ServerRemoteCall]]
+void DebugRunCommand(Player player, string text)
+{
+    if (!Settings.Debug.AllowConsoleCommands) {
+        return;
+    }
+
+    Critter? cr = player.GetControlledCritter();
+    if (cr == null || cr.IsDead()) {
+        return;
+    }
+
+    string response = ExecuteCommand(cr, text);
+    if (!response.isEmpty()) {
+        Messaging::Info(player, response);
+    }
+}
+
+// Разбирает и выполняет команду для криттера, возвращая текст ответа (пусто = без ответа). Гейт и
+// доставка живут в DebugRunCommand, поэтому функция вызывается напрямую из тестов.
+string ExecuteCommand(Critter cr, string text)
+{
+    string[] args = array<string>();
+    string[] rawArgs = text.trim().split(" ");
+
+    for (int i = 0; i < rawArgs.length(); i++) {
+        if (!rawArgs[i].isEmpty()) {
+            args.insertLast(rawArgs[i]);
+        }
+    }
+
+    if (args.length() == 0) {
+        return "";
+    }
+
+    string cmd = args[0].lower();
+
+    if (cmd == "help") {
+        return "~give <proto> [кол-во]; ~tp <loc> [map] [x y] | ~tp global | ~tp hex <x> <y>; ~set <Свойство> <значение>; ~heal; ~god";
+    }
+    if (cmd == "give") {
+        return CommandGive(cr, args);
+    }
+    if (cmd == "tp") {
+        return CommandTeleport(cr, args);
+    }
+    if (cmd == "set" || cmd == "perk") {
+        return CommandSet(cr, args);
+    }
+    if (cmd == "heal") {
+        cr.CurrentHp = cr.MaxLife;
+        cr.CurrentAp = cr.ActionPoints * ::Tla::AP_DIVIDER;
+        return "Полностью вылечен";
+    }
+    if (cmd == "god") {
+        cr.IsInvulnerable = !cr.IsInvulnerable;
+        return cr.IsInvulnerable ? "Godmode включён" : "Godmode выключен";
+    }
+
+    return "Неизвестная команда: " + cmd + " (~help)";
+}
+
+// ~give <protoId> [count] — выдать предмет в инвентарь персонажа.
+string CommandGive(Critter cr, string[] args)
+{
+    if (args.length() < 2) {
+        return "~give <protoId> [count]";
+    }
+
+    hstring pid = args[1].hstr();
+    if (!Game.CheckProtoItem(pid)) {
+        return "Прототип не найден: " + args[1];
+    }
+
+    int count = args.length() >= 3 ? args[2].toInt() : 1;
+    if (count <= 0) {
+        count = 1;
+    }
+
+    cr.AddItem(pid, count);
+    return "Выдано: " + args[1] + " x" + count;
+}
+
+// ~set <Свойство> <значение> — задать целочисленное свойство CritterProperty по имени enum'а
+// (SPECIAL, навыки, перки, квестовые флаги). Для SPECIAL базовое свойство — <Stat>Base.
+string CommandSet(Critter cr, string[] args)
+{
+    if (args.length() < 3) {
+        return "~set <Свойство> <значение>";
+    }
+
+    CritterProperty prop = CritterProperty::None;
+    if (!Game.TryParseEnum(args[1], prop)) {
+        return "Неизвестное свойство: " + args[1];
+    }
+
+    cr.SetAsInt(prop, args[2].toInt());
+    return args[1] + " = " + cr.GetAsInt(prop);
+}
+
+// ~tp global | ~tp hex <x> <y> | ~tp <loc> [map] [x y] — телепорт персонажа.
+string CommandTeleport(Critter cr, string[] args)
+{
+    if (args.length() < 2) {
+        return "~tp <loc> [map] [x y] | ~tp global | ~tp hex <x> <y>";
+    }
+
+    string target = args[1].lower();
+    if (target == "global") {
+        cr.TransferToGlobal();
+        return "Телепорт: глобальная карта";
+    }
+
+    if (target == "hex") {
+        if (args.length() < 4) {
+            return "~tp hex <x> <y>";
+        }
+
+        cr.TransferToHex(mpos(args[2].toInt(), args[3].toInt()));
+        return "";
+    }
+
+    hstring locPid = args[1].hstr();
+    hstring mapPid = locPid;
+    int x = 0;
+    int y = 0;
+
+    if (args.length() >= 3) {
+        if (IsInt(args[2])) {
+            x = args[2].toInt();
+            y = args.length() >= 4 ? args[3].toInt() : 0;
+        }
+        else {
+            mapPid = args[2].hstr();
+            x = args.length() >= 4 ? args[3].toInt() : 0;
+            y = args.length() >= 5 ? args[4].toInt() : 0;
+        }
+    }
+
+    // Ищем карту внутри запрошенной локации: одинаковые map proto могут существовать в нескольких
+    // runtime-инстансах. Для короткой формы с одинаковыми pid запоминаем прямую карту: её pid может
+    // не быть pid'ом локации, и тогда CreateLocation с ним нельзя. Логика повторяет QA-телепорт AiControl.
+    Map? directMap = locPid == mapPid ? Game.GetMap(mapPid) : null;
+    Location? loc = Game.GetLocation(locPid);
+    if (loc != null && (loc.IsDestroyed || loc.GetMapCount() == 0)) {
+        loc = null;
+    }
+    if (loc == null && directMap == null && !Game.CheckProtoLocation(locPid)) {
+        return "Локация не найдена: " + locPid;
+    }
+    if (loc == null && directMap == null) {
+        int zoneLength = Settings.GlobalMap.GlobalMapZoneLength;
+        loc = Location::CreateLocation(locPid, ipos(zoneLength * 10, zoneLength * 10));
+        if (loc != null) {
+            loc.AutoGarbage = false;
+        }
+    }
+
+    Map? targetMap = null;
+    if (loc != null && loc.GetMapCount() > 0) {
+        for (int i = 0; i < loc.GetMapCount(); i++) {
+            Map mapAtIndex = loc.GetMapByIndex(i);
+            if (mapAtIndex.ProtoId == mapPid) {
+                targetMap = mapAtIndex;
+                break;
+            }
+        }
+        if (targetMap == null && locPid == mapPid) {
+            targetMap = loc.GetMapByIndex(0);
+        }
+    }
+    if (targetMap == null && locPid == mapPid) {
+        targetMap = directMap;
+    }
+    if (targetMap == null) {
+        return "Карта не найдена: " + locPid + "/" + mapPid;
+    }
+
+    if (x == 0 && y == 0) {
+        Entrance::CritterTransferToMapEntry(cr, targetMap.Id, "0".hstr());
+    }
+    else {
+        cr.TransferToMap(targetMap, mpos(x, y), HDIR_Random);
+    }
+
+    return "";
+}
+
+// Проверка, что строка — неотрицательное целое (для различения "map" и координаты в ~tp).
+bool IsInt(string value)
+{
+    if (value.isEmpty()) {
+        return false;
+    }
+
+    for (int i = 0; i < value.length(); i++) {
+        string ch = value[i];
+        if (ch != "0" && ch != "1" && ch != "2" && ch != "3" && ch != "4" && ch != "5" && ch != "6" && ch != "7" && ch != "8" && ch != "9") {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+#endif
+
+}

@@ -127,6 +127,14 @@ bool HandleHotkeys(KeyCode key)
             Gui::NextTextInput();
             break;
 
+        // Игровая консоль (~): админ/дебаг-команды. Пока консоль активна, клавиша не перехватывается,
+        // чтобы "~" можно было набирать в самой строке команды.
+        case KeyCode::Grave:
+            if (!inputFocused) {
+                GuiScreensExt::ToggleConsole();
+            }
+            break;
+
         // Выход
         case KeyCode::Escape:
             GuiScreensExt::TryExit();

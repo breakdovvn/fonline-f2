@@ -1,0 +1,111 @@
+// Test_DebugCommands — регрессии админ/дебаг-команд консоли (Scripts/DebugCommands.fos).
+namespace Test_DebugCommands
+{
+
+#if SERVER
+
+[[ModuleInit]]
+void InitTestDebugCommands()
+{
+    Game.OnTestingInit.Subscribe(OnTestingInit);
+}
+
+[[Event]]
+void OnTestingInit()
+{
+    Testing::RegisterTest("debug_commands", "give_set_heal_god", GiveSetHealGod);
+    Testing::RegisterTest("debug_commands", "help_unknown_invalid", HelpUnknownInvalid);
+}
+
+bool FindMovableHex(Map map, mpos& hex)
+{
+    mpos center = mpos(map.Size.width / 2, map.Size.height / 2);
+    for (int radius = 0; radius < 15; radius++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                mpos probe = mpos(center.x + dx, center.y + dy);
+                if (probe.x > 0 && probe.y > 0 && int(probe.x) < map.Size.width - 1 && int(probe.y) < map.Size.height - 1 && map.IsHexMovable(probe)) {
+                    hex = probe;
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+Critter? MakeTestCritter(Testing::TestContext ctx)
+{
+    Location? loc = Testing::CreateTestLocation(ctx, Content::Location::desert_12);
+    if (loc == null) {
+        Testing::Fail(ctx, "Тестовая локация должна создаваться");
+        return null;
+    }
+
+    Map map = loc.GetMapByIndex(0);
+    mpos hex;
+    if (!Testing::Expect(ctx, FindMovableHex(map, hex), "На тестовой карте должен найтись проходимый гекс")) {
+        return null;
+    }
+
+    Critter? cr = Testing::SpawnTestNpc(ctx, map, Content::Critter::Brahmin, hex);
+    if (cr == null) {
+        Testing::Fail(ctx, "NPC должен создаваться");
+    }
+
+    return cr;
+}
+
+void GiveSetHealGod(Testing::TestContext ctx)
+{
+    Critter? cr = MakeTestCritter(ctx);
+    if (cr == null) {
+        return;
+    }
+
+    string response = DebugCommands::ExecuteCommand(cr, "give _10mm_jhp 5");
+    Testing::ExpectEq(ctx, cr.CountItem(Content::Item::_10mm_jhp), 5, "~give должен выдать 5 патронов: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "set SkillSmallGuns 123");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::SkillSmallGuns), 123, "~set должен задать навык: " + response);
+
+    cr.CurrentHp = 1;
+    response = DebugCommands::ExecuteCommand(cr, "heal");
+    Testing::ExpectEq(ctx, cr.CurrentHp, cr.MaxLife, "~heal должен восстановить HP: " + response);
+
+    DebugCommands::ExecuteCommand(cr, "god");
+    Testing::Expect(ctx, cr.IsInvulnerable, "~god должен включить неуязвимость");
+    DebugCommands::ExecuteCommand(cr, "god");
+    Testing::Expect(ctx, !cr.IsInvulnerable, "повторный ~god должен выключить неуязвимость");
+
+    string leaks = Testing::CleanupTest(ctx);
+    Testing::Expect(ctx, leaks.isEmpty(), "Утечки после очистки: " + leaks);
+}
+
+void HelpUnknownInvalid(Testing::TestContext ctx)
+{
+    Critter? cr = MakeTestCritter(ctx);
+    if (cr == null) {
+        return;
+    }
+
+    string response = DebugCommands::ExecuteCommand(cr, "help");
+    Testing::Expect(ctx, !response.isEmpty(), "~help должен возвращать текст");
+
+    response = DebugCommands::ExecuteCommand(cr, "nonsense_cmd");
+    Testing::Expect(ctx, response.find("Неизвестная") == 0, "Неизвестная команда должна вернуть ошибку: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "give no_such_proto_xyz");
+    Testing::Expect(ctx, response.find("не найден") != -1, "Несуществующий прототип должен вернуть ошибку: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "set NoSuchProperty 1");
+    Testing::Expect(ctx, response.find("Неизвестное свойство") == 0, "Неизвестное свойство должно вернуть ошибку: " + response);
+
+    string leaks = Testing::CleanupTest(ctx);
+    Testing::Expect(ctx, leaks.isEmpty(), "Утечки после очистки: " + leaks);
+}
+
+#endif
+
+}

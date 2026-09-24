@@ -89,6 +89,27 @@ void OnDisconnected()
     }
 }
 
+// Открывает/закрывает игровую консоль (клавиша "~"). Работает только на игровом экране и экране
+// глобальной карты; в остальных интерфейсах игнорируется. Имя объекта консоли различается между
+// экранами: на игровом это "ConsoleText", на глобальной карте — "Console".
+void ToggleConsole()
+{
+    Gui::Screen? screen = Gui::GetActiveScreen();
+    if (screen == null || (screen.Num != GuiScreen::Game && screen.Num != GuiScreen::GlobalMap)) {
+        return;
+    }
+
+    Gui::Object? consoleObj = screen.Find("ConsoleText");
+    if (consoleObj == null) {
+        consoleObj = screen.Find("Console");
+    }
+
+    Gui::Console? console = cast<Gui::Console?>(consoleObj);
+    if (console != null) {
+        console.Toggle();
+    }
+}
+
 // Плавное затемнение экрана из чёрного (общий переход между экранами).
 void ScreenFadeOut()
 {

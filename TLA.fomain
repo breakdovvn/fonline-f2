@@ -26,6 +26,8 @@ AiControl.ProfileObservationThresholdMs = 0
 AiControl.CaptureRawInputEvents = False
 AiControl.AllowQaCommands = False
 
+Debug.AllowConsoleCommands = False
+
 Android.PackageName = com.fonline.tla
 Android.VersionCode = 1
 Android.MinSdk = 23
@@ -439,6 +441,7 @@ Timer.DeltaTimeCap = 100
 [SubConfig]
 Name = LocalTest
 ServerNetwork.LoginTimeout = 0
+Debug.AllowConsoleCommands = True
 
 [SubConfig]
 Name = PublicGame
