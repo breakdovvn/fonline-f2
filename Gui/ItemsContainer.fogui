@@ -272,10 +272,12 @@
 //               "GlobalScope": null,
 //               "ClassFields": null,
 //               "OnInit": null,
-//               "OnShow":
+//               "OnInit":
 {
     {
         {
+            // Ячейка создаётся движком без вызова OnShow, поэтому размер берём в OnInit,
+            // иначе картинка предмета рисуется с нулевым размером и не видна.
             SetSize(::GuiScreensExt::NeedObject(Parent).Size.width, ::GuiScreensExt::NeedObject(Parent).Size.height);
         }
     }

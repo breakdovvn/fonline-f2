@@ -17,6 +17,10 @@ namespace NpcPlanes
 ///@ Event Server Critter OnNpcPlaneEnd(int32 planeId, int32 reason, Critter someCr, Item someItem)
 ///@ Event Server Critter OnNpcPlaneRun(int32 planeId, int32 reason, any& result0, any& result1, any& result2)
 
+// Период опроса AI-планов (бой/патруль). Скорость реакции NPC в бою напрямую зависит от него,
+// поэтому он короткий. Бродильный тик Mob и общий CritterIdleTick остаются медленными.
+const int NPC_AI_TICK_MS = 1000;
+
 const int MAX_PLANES_PER_CRITTER = 10;
 
 // Типы планов
@@ -72,19 +76,98 @@ void NL(Critter npc, string str)
 
 funcdef void NpcPlaneMiscFunc(Critter cr);
 
+// AI-планы крутятся только на картах, где сейчас есть игроки. В открытом мире десятки локаций
+// и тысячи NPC; если тикать всех сразу, единственный логический поток сервера грузится на 100%
+// и серверные действия (диалоги, ответы) встают в очередь. При входе первого игрока на карту
+// будим её NPC, при уходе последнего — гасим.
+dict<ident, int> PlayerCountByMap = {};
+
 [[ModuleInit]]
 void InitNpcPlanes()
 {
     Game.OnCritterInit.Subscribe(OnCritterInit);
+    Game.OnMapCritterIn.Subscribe(OnMapCritterIn);
     Game.OnMapCritterOut.Subscribe(OnMapCritterOut);
+}
+
+void StartAiTick(Critter cr)
+{
+    if (cr.CountTimeEvent(OnCritterIdle) == 0) {
+        cr.StartTimeEvent(Time::Milliseconds(Game.Random(0, NPC_AI_TICK_MS)), Time::Milliseconds(NPC_AI_TICK_MS), OnCritterIdle);
+    }
+}
+
+void StopAiTick(Critter cr)
+{
+    if (cr.CountTimeEvent(OnCritterIdle) != 0) {
+        cr.StopTimeEvent(OnCritterIdle);
+    }
+}
+
+void StartMapAi(Map map)
+{
+    Critter[] npcs = map.GetCritters(CritterFindType::Npc);
+    for (int i = 0; i < npcs.length(); i++) {
+        StartAiTick(npcs[i]);
+    }
+}
+
+void StopMapAi(Map map)
+{
+    Critter[] npcs = map.GetCritters(CritterFindType::Npc);
+    for (int i = 0; i < npcs.length(); i++) {
+        StopAiTick(npcs[i]);
+    }
 }
 
 [[Event]]
 void OnCritterInit(Critter cr, bool firstTime)
 {
-    if (!cr.ControlledByPlayer) {
-        cr.StartTimeEvent(Time::Milliseconds(Game.Random(0, 1000)), Time::Milliseconds(1000), OnCritterIdle);
+    if (cr.ControlledByPlayer) {
+        return;
     }
+
+    Map? map = cr.GetMap();
+    if (map != null && PlayerCountByMap.get(map.Id, 0) > 0) {
+        StartAiTick(cr);
+    }
+}
+
+[[Event]]
+void OnMapCritterIn(Map map, Critter cr)
+{
+    if (!cr.ControlledByPlayer) {
+        if (PlayerCountByMap.get(map.Id, 0) > 0) {
+            StartAiTick(cr);
+        }
+        return;
+    }
+
+    const int count = PlayerCountByMap.get(map.Id, 0);
+    PlayerCountByMap[map.Id] = count + 1;
+    if (count == 0) {
+        StartMapAi(map);
+    }
+}
+
+[[Event]]
+void OnMapCritterOut(Map map, Critter cr)
+{
+    if (!cr.ControlledByPlayer) {
+        StopAiTick(cr);
+    }
+    else {
+        const int count = PlayerCountByMap.get(map.Id, 0);
+        if (count <= 1) {
+            PlayerCountByMap[map.Id] = 0;
+            StopMapAi(map);
+        }
+        else {
+            PlayerCountByMap[map.Id] = count - 1;
+        }
+    }
+
+    DropPlanes(cr);
 }
 
 [[TimeEvent]]
@@ -100,12 +183,6 @@ void OnCritterIdle(Critter npc)
             CritterState::Wait(npc, wait);
         }
     }
-}
-
-[[Event]]
-void OnMapCritterOut(Map map, Critter cr)
-{
-    DropPlanes(cr);
 }
 
 bool CheckHasEnoughAP(Critter cr, int ap)

@@ -39,11 +39,13 @@ void OnStart()
 }
 
 // Карта загружена — переходим к игровому экрану и ставим курсор перемещения.
+// Событие приходит и для глобальной карты (движок шлёт его с пустым map_pid), а CurMap там
+// отсутствует: без ветки на экран мировой карты остаётся чёрный фон с одним интерфейсом.
 [[Event]]
 void OnMapLoaded()
 {
     Gui::HideAllScreens();
-    Gui::ShowScreen(GuiScreen::Game);
+    Gui::ShowScreen(HasCurMap ? GuiScreen::Game : GuiScreen::GlobalMap);
     Gui::Cursor = CursorType::Move;
     ScreenFadeOut();
 }

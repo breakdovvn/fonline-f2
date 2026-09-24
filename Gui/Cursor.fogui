@@ -87,6 +87,9 @@
         Sprite::Sprite CursorUseItem;
         Sprite::Sprite CursorUseSkill;
         Sprite::Sprite[] CursorMoveScreen = {};
+        Sprite::Sprite CursorMovePre;
+        Sprite::Sprite CursorMovePost;
+        Sprite::Sprite CursorMoveX;
 
         ucolor CurCrittersCountour;
     }
@@ -113,6 +116,10 @@
             CursorMoveScreen[5].Load("art/intrface/cursor_move_screen_dl.png");
             CursorMoveScreen[6].Load("art/intrface/cursor_move_screen_l.png");
             CursorMoveScreen[7].Load("art/intrface/cursor_move_screen_ul.png");
+            // Маркер выбранного гекса при курсоре передвижения (Fallout-геометрия).
+            CursorMovePre = Sprite::Sprite("art/geometry/fallout_move_pre.png");
+            CursorMovePost = Sprite::Sprite("art/geometry/fallout_move_post.png");
+            CursorMoveX = Sprite::Sprite("art/geometry/fallout_move_x.png");
         }
     }
 }
@@ -163,7 +170,12 @@
             }
             // Attack contours
             ucolor contour = (cursor == CursorType::UseWeapon ? ucolor(255, 0, 0, 255) : ZERO_UCOLOR);
-            if (contour != CurCrittersCountour) {
+            if (!HasCurMap) {
+                // На глобальной карте CurMap отсутствует: сбрасываем кэш контуров,
+                // чтобы на следующей карте они применились заново.
+                CurCrittersCountour = ZERO_UCOLOR;
+            }
+            else if (contour != CurCrittersCountour) {
                 CurCrittersCountour = contour;
                 Critter[] critters = CurMap.GetCritters(CritterFindType::Any);
                 for (int i = 0; i < critters.length(); i++) {
@@ -173,6 +185,11 @@
 
             // Other cursors
             if (cursor == CursorType::UseWeapon) {
+                if (!HasCurMap) {
+                    CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
                 CursorAttack.Draw(Game.MousePos, isize(), 0, 0);
 
                 if (!HasChosen) {
@@ -223,14 +240,35 @@
                 CursorUseSkill.Draw(Game.MousePos, isize(), 0, 0);
             }
             else if (cursor == CursorType::Move) {
-                mpos targetHex;
+                if (!HasCurMap) {
+                    CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
                 if (!HasChosen) {
                     return;
                 }
-                // CurMap.SetCursorPos(chosen, Game.MousePos, Input::IsShiftDown(), true);
 
+                mpos targetHex;
                 if (!CurMap.GetHexAtScreenPos(Game.MousePos, targetHex)) {
                     CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
+                // Маркер выбранного гекса. Раньше рисовался движковым CurMap.SetCursorPos,
+                // который удалён; переносим отрисовку в скрипт. Курсор рисуется
+                // центрированно на экранной позиции гекса.
+                if (targetHex == Chosen.Hex) {
+                    return;
+                }
+
+                ipos hexPos = CurMap.GetHexScreenPos(targetHex);
+                if (CurMap.IsHexMovable(targetHex)) {
+                    CursorMovePost.Draw(hexPos, isize(), 0, 0);
+                    CursorMovePre.Draw(hexPos, isize(), 0, 0);
+                }
+                else {
+                    CursorMoveX.Draw(hexPos, isize(), 0, 0);
                 }
             }
             else if (cursor == CursorType::Default) {

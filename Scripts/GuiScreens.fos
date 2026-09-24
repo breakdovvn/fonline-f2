@@ -2385,7 +2385,8 @@ namespace Game
 
     void GameLMouseDown()
     {
-        if (!HasChosen) {
+        // На глобальной карте CurMap отсутствует: без этой проверки клик даёт ScriptException.
+        if (!HasChosen || !HasCurMap) {
             return;
         }
         Critter chosen = Chosen;
@@ -2500,7 +2501,7 @@ namespace Game
 
         void OnGlobalMouseDown(MouseButton button) override
         {
-            if (Settings.View.MapZoomEnabled && Settings.View.MapZoomInProgress) {
+            if (HasCurMap && Settings.View.MapZoomEnabled && Settings.View.MapZoomInProgress) {
                 if (button == MouseButton::WheelUp) {
                     CurMap.ChangeZoom(CurMap.SpritesZoom - 0.01);
                 }
@@ -2528,7 +2529,7 @@ namespace Game
                 if (button == MouseButton::Left) {
                     GameLMouseUp();
                 }
-                else if (button == MouseButton::Middle) {
+                else if (button == MouseButton::Middle && HasCurMap) {
                     Critter? cr = CurMap.GetCritterAtScreenPos(Game.MousePos);
                     if (cr != null && cr.IsChosen) {
                         ::ChosenActions::SetChosenActions({::Tla::ChosenDir, (Input::IsShiftDown() ? 1 : 0), 0, 0, 0, 0, 0});
@@ -3188,15 +3189,9 @@ namespace Game
         void OnDrawItem(Item item, Gui::Object cell, int cellIndex) override
         {
             int apCost = 0;
-            if (item.Ownership == ItemOwnership::CritterInventory) {
-                apCost = ::Parameters::GetItemUseApCost(Game.GetCritter(item.CritterId), item, item.Mode);
-            }
-            else if (false) {
-                if (HasChosen) {
-                    Critter chosen = Chosen;
-                    auto item2 = ::CritterItem::GetSlotItemProto(chosen);
-                    apCost = ::Parameters::GetItemUseApCost(chosen, item2, chosen.HandsItemMode);
-                }
+            if (HasChosen) {
+                Critter chosen = Chosen;
+                apCost = ::Parameters::GetItemUseApCost(chosen, item, item.Mode);
             }
 
             SetActive(apCost > 0);
@@ -3977,12 +3972,17 @@ namespace GlobalMap
 
     class LocationPic : Gui::Panel
     {
-        ::GlobalMapLocations::LocationData Location;
+        ::GlobalMapLocations::LocationData? Location;
 
         void SetLocPosition(float zoom)
         {
-            int radius = int(Location.Radius * 2 * zoom);
-            SetPosition(int(Location.LocWx * zoom) - radius / 2, int(Location.LocWy * zoom) - radius / 2);
+            ::GlobalMapLocations::LocationData? loc = Location;
+            if (loc == null) {
+                return;
+            }
+
+            int radius = int(loc.Radius * 2 * zoom);
+            SetPosition(int(loc.LocWx * zoom) - radius / 2, int(loc.LocWy * zoom) - radius / 2);
             SetSize(radius, radius);
         }
 
@@ -3994,9 +3994,16 @@ namespace GlobalMap
 
         void OnShow(dict<string, any> params) override
         {
+            // Прототип ячейки тоже получает _Show: движок обходит всех детей грида, не глядя на
+            // Active. Локация присваивается только инстансам в OnResizeGrid, у прототипа её нет.
+            ::GlobalMapLocations::LocationData? loc = Location;
+            if (loc == null) {
+                return;
+            }
+
             SetLocPosition(1.0f);
-            if (Location.Color != ucolor(0)) {
-                SetColor(Location.Color);
+            if (loc.Color != ucolor(0)) {
+                SetColor(loc.Color);
             }
             else {
                 SetColor(Color::Green);
@@ -4102,7 +4109,10 @@ namespace GlobalMap
 
             auto hoveredLocation = cast < ::GuiScreens::GlobalMap::LocationPic ? > (Gui::GetHoveredObject());
             if (hoveredLocation != null) {
-                text += Game.GetText(::MsgStr::LocNameKey(hoveredLocation.Location.LocPid)) + "\n";
+                ::GlobalMapLocations::LocationData? hoveredLocData = hoveredLocation.Location;
+                if (hoveredLocData != null) {
+                    text += Game.GetText(::MsgStr::LocNameKey(hoveredLocData.LocPid)) + "\n";
+                }
             }
 
             auto gmBase = cast<GlobalMapBase>(::GuiScreensExt::NeedObject(::GuiScreensExt::NeedObject(Parent).Parent));
@@ -7019,7 +7029,10 @@ namespace Inventory
             SetPosition(155, 287);
             SetSize(90, 60);
             SetDraggable(true);
-            SetBackgroundImage("art/intrface/dummy.png", SpriteLayout::Zoom);
+            // Прозрачная заглушка вместо dummy.png (зелёный крестик): пустой слот экипировки
+            // рисуется прототипом ячейки и не должен показывать крест. Картинка предмета
+            // подгружается поверх в OnDrawItem.
+            SetBackgroundImage("art/intrface/none.png", SpriteLayout::Zoom);
         }
 
         void OnLMousePressed() override
@@ -7037,7 +7050,7 @@ namespace Inventory
         void OnDrawItem(Item item, Gui::Object cell, int cellIndex) override
         {
             SetDraggable(true);
-            ::GuiScreensExt::NeedSprite(BackgroundImage).Load(item.PicInv);
+            SetBackgroundImage(item.PicInv, SpriteLayout::Zoom);
         }
     };
 
@@ -16115,6 +16128,9 @@ namespace Cursor
         Sprite::Sprite CursorUseItem;
         Sprite::Sprite CursorUseSkill;
         Sprite::Sprite[] CursorMoveScreen = {};
+        Sprite::Sprite CursorMovePre;
+        Sprite::Sprite CursorMovePost;
+        Sprite::Sprite CursorMoveX;
 
         ucolor CurCrittersCountour;
 
@@ -16143,6 +16159,10 @@ namespace Cursor
             CursorMoveScreen[5].Load("art/intrface/cursor_move_screen_dl.png");
             CursorMoveScreen[6].Load("art/intrface/cursor_move_screen_l.png");
             CursorMoveScreen[7].Load("art/intrface/cursor_move_screen_ul.png");
+            // Маркер выбранного гекса при курсоре передвижения (Fallout-геометрия).
+            CursorMovePre = Sprite::Sprite("art/geometry/fallout_move_pre.png");
+            CursorMovePost = Sprite::Sprite("art/geometry/fallout_move_post.png");
+            CursorMoveX = Sprite::Sprite("art/geometry/fallout_move_x.png");
         }
 
         void OnDraw() override
@@ -16186,7 +16206,12 @@ namespace Cursor
             }
             // Attack contours
             ucolor contour = (cursor == CursorType::UseWeapon ? ucolor(255, 0, 0, 255) : ZERO_UCOLOR);
-            if (contour != CurCrittersCountour) {
+            if (!HasCurMap) {
+                // На глобальной карте CurMap отсутствует: сбрасываем кэш контуров,
+                // чтобы на следующей карте они применились заново.
+                CurCrittersCountour = ZERO_UCOLOR;
+            }
+            else if (contour != CurCrittersCountour) {
                 CurCrittersCountour = contour;
                 Critter[] critters = CurMap.GetCritters(CritterFindType::Any);
                 for (int i = 0; i < critters.length(); i++) {
@@ -16196,6 +16221,11 @@ namespace Cursor
 
             // Other cursors
             if (cursor == CursorType::UseWeapon) {
+                if (!HasCurMap) {
+                    CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
                 CursorAttack.Draw(Game.MousePos, isize(), 0, 0);
 
                 if (!HasChosen) {
@@ -16246,14 +16276,35 @@ namespace Cursor
                 CursorUseSkill.Draw(Game.MousePos, isize(), 0, 0);
             }
             else if (cursor == CursorType::Move) {
-                mpos targetHex;
+                if (!HasCurMap) {
+                    CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
                 if (!HasChosen) {
                     return;
                 }
-                // CurMap.SetCursorPos(chosen, Game.MousePos, Input::IsShiftDown(), true);
 
+                mpos targetHex;
                 if (!CurMap.GetHexAtScreenPos(Game.MousePos, targetHex)) {
                     CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
+
+                // Маркер выбранного гекса. Раньше рисовался движковым CurMap.SetCursorPos,
+                // который удалён; переносим отрисовку в скрипт. Курсор рисуется
+                // центрированно на экранной позиции гекса.
+                if (targetHex == Chosen.Hex) {
+                    return;
+                }
+
+                ipos hexPos = CurMap.GetHexScreenPos(targetHex);
+                if (CurMap.IsHexMovable(targetHex)) {
+                    CursorMovePost.Draw(hexPos, isize(), 0, 0);
+                    CursorMovePre.Draw(hexPos, isize(), 0, 0);
+                }
+                else {
+                    CursorMoveX.Draw(hexPos, isize(), 0, 0);
                 }
             }
             else if (cursor == CursorType::Default) {
@@ -16885,8 +16936,10 @@ namespace ItemsContainer
             SetNotHittable(true);
         }
 
-        void OnShow(dict<string, any> params) override
+        void OnInit() override
         {
+            // Ячейка создаётся движком без вызова OnShow, поэтому размер берём в OnInit,
+            // иначе картинка предмета рисуется с нулевым размером и не видна.
             SetSize(::GuiScreensExt::NeedObject(Parent).Size.width, ::GuiScreensExt::NeedObject(Parent).Size.height);
         }
 

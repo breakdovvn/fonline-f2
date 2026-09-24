@@ -86,8 +86,12 @@ void AddNewHonomer()
             }
         }
 
-        int[] props = {CritterProperty::DialogId, Content::Dialog::sf_honomer.hash};
-        Critter npc = map.AddCritter(Content::Critter::ElronologistFemale, hex, HDIR_Random, Tla::GetCritPropsDict(props));
+        // Хеш диалога нельзя передавать в props при генерации мира: на этой стадии
+        // хранилище хешей ещё не содержит диалоговых прототипов, и движок бросает
+        // HashResolveException ("Can't resolve hash"). Создаём без props и присваиваем
+        // hstring напрямую — он разрешится позже.
+        Critter npc = map.AddCritter(Content::Critter::ElronologistFemale, hex, HDIR_Random);
+        npc.DialogId = Content::Dialog::sf_honomer;
         npc.SetupScript(HonomerInit);
     }
 }

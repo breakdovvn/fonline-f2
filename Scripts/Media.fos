@@ -85,6 +85,11 @@ void OnLoop()
 [[Event]]
 void OnMapLoaded()
 {
+    // На глобальной карте CurMap отсутствует — без проверки будет ScriptException "No current map".
+    if (!HasCurMap) {
+        return;
+    }
+
     hstring music;
     if (CurMap.Music.length() > 0) {
         music = CurMap.Music[Game.Random(0, CurMap.Music.length() - 1)];

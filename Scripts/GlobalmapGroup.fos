@@ -174,14 +174,7 @@ void InitGlobalmapGroup()
 {
     Game.OnGlobalMapCritterIn.Subscribe(OnGlobalMapCritterIn);
     Game.OnGlobalMapCritterOut.Subscribe(OnGlobalMapCritterOut);
-    Game.OnCritterInit.Subscribe(OnCritterInit);
     Game.LoadImage(Tla::ImageRelief, "relief_tla.png");
-}
-
-[[Event]]
-void OnCritterInit(Critter cr, bool firstTime)
-{
-    cr.StartTimeEvent(Time::Milliseconds(0), Time::Milliseconds(1000), OnCritterIdle);
 }
 
 [[TimeEvent]]
@@ -199,6 +192,12 @@ void OnCritterIdle(Critter cr)
 [[Event]]
 void OnGlobalMapCritterIn(Critter cr)
 {
+    // Тик движения группы нужен только на глобальной карте: держим таймер ленивым,
+    // чтобы не запускать его для всех статичных NPC мира.
+    if (cr.CountTimeEvent(OnCritterIdle) == 0) {
+        cr.StartTimeEvent(Time::Milliseconds(0), Time::Milliseconds(1000), OnCritterIdle);
+    }
+
     int tripId = cr.GlobalMapTripId;
     bool createdGroup = false;
     Game.Lock();
@@ -231,6 +230,10 @@ void OnGlobalMapCritterIn(Critter cr)
 [[Event]]
 void OnGlobalMapCritterOut(Critter cr)
 {
+    if (cr.CountTimeEvent(OnCritterIdle) != 0) {
+        cr.StopTimeEvent(OnCritterIdle);
+    }
+
     int tripId = cr.GlobalMapTripId;
     Critter[] members = {};
     if (!SnapshotGroupForMutation(cr, tripId, members)) {

@@ -49,7 +49,8 @@
 
     void GameLMouseDown()
     {
-        if (!HasChosen) {
+        // На глобальной карте CurMap отсутствует: без этой проверки клик даёт ScriptException.
+        if (!HasChosen || !HasCurMap) {
             return;
         }
         Critter chosen = Chosen;
@@ -200,7 +201,7 @@
 {
     {
         {
-            if (Settings.View.MapZoomEnabled && Settings.View.MapZoomInProgress) {
+            if (HasCurMap && Settings.View.MapZoomEnabled && Settings.View.MapZoomInProgress) {
                 if (button == MouseButton::WheelUp) {
                     CurMap.ChangeZoom(CurMap.SpritesZoom - 0.01);
                 }
@@ -231,7 +232,7 @@
                 if (button == MouseButton::Left) {
                     GameLMouseUp();
                 }
-                else if (button == MouseButton::Middle) {
+                else if (button == MouseButton::Middle && HasCurMap) {
                     Critter? cr = CurMap.GetCritterAtScreenPos(Game.MousePos);
                     if (cr != null && cr.IsChosen) {
                         ::ChosenActions::SetChosenActions({::Tla::ChosenDir, (Input::IsShiftDown() ? 1 : 0), 0, 0, 0, 0, 0});
@@ -2704,15 +2705,9 @@
     {
         {
             int apCost = 0;
-            if (item.Ownership == ItemOwnership::CritterInventory) {
-                apCost = ::Parameters::GetItemUseApCost(Game.GetCritter(item.CritterId), item, item.Mode);
-            }
-            else if (false) {
-                if (HasChosen) {
-                    Critter chosen = Chosen;
-                    auto item2 = ::CritterItem::GetSlotItemProto(chosen);
-                    apCost = ::Parameters::GetItemUseApCost(chosen, item2, chosen.HandsItemMode);
-                }
+            if (HasChosen) {
+                Critter chosen = Chosen;
+                apCost = ::Parameters::GetItemUseApCost(chosen, item, item.Mode);
             }
 
             SetActive(apCost > 0);

@@ -19,6 +19,7 @@ namespace CritterState
 void InitCritterState()
 {
     Game.OnCritterInit.Subscribe(OnCritterInit);
+    Game.OnCritterKnockout.Subscribe(OnCritterKnockout);
 }
 
 [[Event]]
@@ -27,8 +28,16 @@ void OnCritterInit(Critter cr, bool firstTime)
     if (firstTime) {
         cr.WaitEndTick = ZERO_NANOTIME;
     }
+}
 
-    cr.StartTimeEvent(Time::Milliseconds(Game.Random(0, 1000)), Time::Milliseconds(1000), OnCritterIdle);
+// Тик нужен только лежащему в нокауте криттеру, поэтому запускаем его на нокауте,
+// а не постоянно для каждого NPC мира.
+[[Event]]
+void OnCritterKnockout(Critter cr)
+{
+    if (cr.CountTimeEvent(OnCritterIdle) == 0) {
+        cr.StartTimeEvent(Time::Milliseconds(1000), Time::Milliseconds(1000), OnCritterIdle);
+    }
 }
 
 // Периодический тик (раз в секунду): пробуем поднять криттера из нокаута по мере восстановления AP.
@@ -58,6 +67,9 @@ void ToDead(Critter cr, CritterActionAnim actionAnim, Critter? killer)
 
     cr.DeadActionAnim = actionAnim;
     cr.SetCondition(CritterCondition::Dead, actionAnim, null);
+    if (cr.CountTimeEvent(OnCritterIdle) != 0) {
+        cr.StopTimeEvent(OnCritterIdle);
+    }
 
     Game.OnCritterDead.Fire(cr, killer);
     cr.OnDead.Fire(killer);
@@ -220,6 +232,9 @@ void TryUpOnKnockout(Critter cr)
 
     // Встаём
     cr.SetCondition(CritterCondition::Alive, cr.ActionAnimKnockoutEnd, null);
+    if (cr.CountTimeEvent(OnCritterIdle) != 0) {
+        cr.StopTimeEvent(OnCritterIdle);
+    }
     CritterState::Wait(cr, Settings.Movement.Breaktime);
 }
 

@@ -632,12 +632,17 @@
 //                   "ClassFields":
 {
     {
-        ::GlobalMapLocations::LocationData Location;
+        ::GlobalMapLocations::LocationData? Location;
 
         void SetLocPosition(float zoom)
         {
-            int radius = int(Location.Radius * 2 * zoom);
-            SetPosition(int(Location.LocWx * zoom) - radius / 2, int(Location.LocWy * zoom) - radius / 2);
+            ::GlobalMapLocations::LocationData? loc = Location;
+            if (loc == null) {
+                return;
+            }
+
+            int radius = int(loc.Radius * 2 * zoom);
+            SetPosition(int(loc.LocWx * zoom) - radius / 2, int(loc.LocWy * zoom) - radius / 2);
             SetSize(radius, radius);
         }
     }
@@ -647,9 +652,16 @@
 {
     {
         {
+            // Прототип ячейки тоже получает _Show: движок обходит всех детей грида, не глядя на
+            // Active. Локация присваивается только инстансам в OnResizeGrid, у прототипа её нет.
+            ::GlobalMapLocations::LocationData? loc = Location;
+            if (loc == null) {
+                return;
+            }
+
             SetLocPosition(1.0f);
-            if (Location.Color != ucolor(0)) {
-                SetColor(Location.Color);
+            if (loc.Color != ucolor(0)) {
+                SetColor(loc.Color);
             }
             else {
                 SetColor(Color::Green);
@@ -960,7 +972,10 @@
 
             auto hoveredLocation = cast < ::GuiScreens::GlobalMap::LocationPic ? > (Gui::GetHoveredObject());
             if (hoveredLocation != null) {
-                text += Game.GetText(::MsgStr::LocNameKey(hoveredLocation.Location.LocPid)) + "\\n";
+                ::GlobalMapLocations::LocationData? hoveredLocData = hoveredLocation.Location;
+                if (hoveredLocData != null) {
+                    text += Game.GetText(::MsgStr::LocNameKey(hoveredLocData.LocPid)) + "\\n";
+                }
             }
 
             auto gmBase = cast<GlobalMapBase>(::GuiScreensExt::NeedObject(::GuiScreensExt::NeedObject(Parent).Parent));

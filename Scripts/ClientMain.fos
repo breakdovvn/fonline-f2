@@ -72,9 +72,18 @@ void finish()
 // Функция главного цикла. Вызывается каждый кадр.
 nanotime MouseStayTick = ZERO_NANOTIME;
 
+// Теневые коллекции GUI устарели. Обновление отложено до кадра: ItemInvIn приходит пачкой
+// при входе в игру, а RefreshItemViews перестраивает все виды сразу.
+bool ItemViewsDirty = false;
+
 [[Event]]
 void loop()
 {
+    if (ItemViewsDirty) {
+        ItemViewsDirty = false;
+        ::ClientItems::RefreshItemViews();
+    }
+
     // Описание объекта под курсором
     if (Gui::Cursor == CursorType::Default && Game.FrameTime - Time::Milliseconds(1200) >= MouseStayTick && MouseStayTick != ZERO_NANOTIME) {
         MouseStayTick = ZERO_NANOTIME;
@@ -240,6 +249,13 @@ void CritterIn(Critter cr)
                                              ClientDefines::ITEMS_PICKUP_FROM,
                                              ClientDefines::ITEMS_BARTER,
                                              ClientDefines::ITEMS_USE});
+
+        // Движок ставит камеру на игрока только в Net_OnPlaceToGameComplete и лишь когда
+        // выбранный криттер уже существует. Если он появился позже, вид остаётся в углу
+        // карты и рисует пустоту — чёрный экран при живом HUD. Центрируем здесь.
+        if (HasCurMap) {
+            CurMap.MoveScreenToHex(cr.Hex, cr.HexOffset, 0, false);
+        }
     }
 }
 
@@ -266,9 +282,12 @@ void ItemMapOut(Item item)
 }
 
 // Вызывается при добавлении/удалении предмета в инвентаре выбранного персонажа.
+// Экипировка приходит этим же событием: движок пере-добавляет предмет с новым слотом
+// (Client.cpp Net_OnChosenAddItem), поэтому виды слотов надо пометить устаревшими.
 [[Event]]
 void ItemInvIn(Item item)
 {
+    ItemViewsDirty = true;
 }
 
 [[Event]]
@@ -279,6 +298,7 @@ void ItemInvChanged(Item itemNow, Item itemBefore)
 [[Event]]
 void ItemInvOut(Item item)
 {
+    ItemViewsDirty = true;
 }
 
 [[Event]]

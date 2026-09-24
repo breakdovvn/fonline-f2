@@ -587,7 +587,7 @@ const int GlobalProcessStopped = 5;
 const int GlobalProcessNpcIdle = 6; // Вызывается каждые Settings.Critter.CritterIdleTick
 const int GlobalProcessKick = 7;
 
-const float GLOBAL_MAP_BASE_SPEED = 2.4f; // Базовая скорость, 2.4 пикселя в секунду
+const float GLOBAL_MAP_BASE_SPEED = 7.2f; // Базовая скорость, 7.2 пикселя в секунду (x3 от исходных 2.4)
 
 // Типы перемещения по глобальной карте
 const int GmWalkGround = 0;

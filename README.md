@@ -438,7 +438,7 @@ Subconfigs:
 
 | Subconfig | Purpose |
 | --------- | ------- |
-| `Unpackaged` | Development-oriented unpackaged startup. Disables music, adds artificial lag, enables render debug, and adjusts timeout/debug settings. |
+| `Unpackaged` | Development-oriented unpackaged startup. Disables music, enables render debug, and adjusts timeout/debug settings. |
 | `LocalTest` | Local development shard used by launch tasks. Currently empty, so it keeps the base localhost/default-port settings. |
 | `PublicGame` | Public-game profile with a public port and server UI collapse behavior. |
 

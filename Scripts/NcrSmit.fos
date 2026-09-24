@@ -132,6 +132,17 @@ void SmitInit(Critter smit, bool firstTime)
 
     // на всякий случай проверяем, что на своем месте смит
     SetSmitPos(SmitPosReservePos(GetSmitPos()));
+
+    // Переносить криттера прямо из InitScript нельзя: движок трактует это как
+    // "Critter map add event moved the committed critter" и валит генерацию мира.
+    // Откладываем коррекцию позиции на ближайший тик.
+    smit.StartTimeEvent(Time::Milliseconds(1), ZERO_TIMESPAN, SmitDeferredRespawn);
+}
+
+// Отложенная коррекция домашней позиции Смита после инициализации.
+[[TimeEvent]]
+void SmitDeferredRespawn(Critter smit)
+{
     SmitRespawnImpl(smit);
 }
 

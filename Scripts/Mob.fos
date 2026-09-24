@@ -84,7 +84,7 @@ void MobInit(Critter npc, bool firstTime)
     //	npc.OnCritterAppearedDist2.Subscribe(ShowPlayerFastAttack);
     //	npc.OnCritterDisappearedDist2.Subscribe(HidePlayerFastAttack);
 
-    npc.StartTimeEvent(Time::Asap(), Time::Seconds(1), Idle);
+    npc.StartTimeEvent(Time::Asap(), Time::Milliseconds(Settings.Critter.CritterIdleTick), Idle);
     npc.OnMessage.Subscribe(OnMessage);
     npc.OnNpcPlaneBegin.Subscribe(PlaneBegin);
     npc.OnSomeCritterDead.Subscribe(Death);

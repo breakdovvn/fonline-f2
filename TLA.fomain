@@ -431,7 +431,6 @@ WorldTime.StartYear = 2040
 [SubConfig]
 Name = Unpackaged
 Audio.MusicVolume = 0
-Network.ArtificalLags = 80
 Render.RenderDebug = True
 ServerNetwork.InactivityDisconnectTime = 0
 ServerNetwork.LoginTimeout = 0
