@@ -36,7 +36,7 @@ bool FindMovableHex(Map map, mpos& hex)
     return false;
 }
 
-Critter ? MakeTestCritter(Testing::TestContext ctx)
+Critter? MakeTestCritter(Testing::TestContext ctx)
 {
     Location? loc = Testing::CreateTestLocation(ctx, Content::Location::desert_12);
     if (loc == null) {
