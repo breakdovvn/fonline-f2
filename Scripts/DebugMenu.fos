@@ -1,0 +1,1633 @@
+// DebugMenu — внутриигровое модальное дебаг-меню клиента (выдача предметов, правка SPECIAL/навыков,
+// перков/трейтов, телепорт). Строит экран GuiScreen::DebugMenu программно (не через .fogui), чтобы
+// вся логика жила в одном скрипте и не требовала правок генерируемого GuiScreens.fos.
+// CLIENT: открывается по F7 (InputHandler) или командой "~menu" (Messaging). Действия уходят на сервер
+// единым путём CurPlayer.ServerCall.DebugRunCommand(...) — та же логика, что и у консольных ~команд.
+// Гейт Debug.AllowConsoleCommands проверяется сервером (Scripts/DebugCommands.fos); меню — только UI.
+namespace DebugMenu
+{
+
+///@ Enum GuiScreen DebugMenu
+
+#if CLIENT
+
+// Палитра. Панели/кнопки тонируются цветом поверх white_pixel (чёрный пиксель при умножении на цвет
+// остаётся чёрным, поэтому подложка обязана быть белой).
+const ucolor ColBg = ucolor(7, 9, 14, 255);
+const ucolor ColPanel = ucolor(26, 33, 46, 255);
+const ucolor ColPanelAlt = ucolor(17, 22, 33, 255);
+const ucolor ColBorder = ucolor(72, 96, 128, 255);
+const ucolor ColAccent = ucolor(52, 88, 134, 255);
+const ucolor ColButton = ucolor(42, 54, 72, 255);
+const ucolor ColButtonHot = ucolor(86, 122, 168, 255);
+const ucolor ColText = ucolor(224, 231, 242, 255);
+const ucolor ColDim = ucolor(150, 164, 184, 255);
+const ucolor ColRed = ucolor(176, 62, 62, 255);
+const ucolor ColBlue = ucolor(58, 104, 168, 255);
+const ucolor ColYellow = ucolor(172, 140, 56, 255);
+const ucolor ColGreen = ucolor(38, 92, 56, 255);
+const ucolor ColWhite = ucolor(255, 255, 255, 255);
+
+const FontType FontBody = FontType::Default;
+const FontType FontHead = FontType::Fat;
+
+// Идентификаторы действий кнопок (передаются в DebugButton.ActionId -> DebugMenu::OnButton).
+const int ActTabItems = 1000;
+const int ActTabStats = 1001;
+const int ActTabPerks = 1002;
+const int ActTabTeleport = 1003;
+const int ActClose = 1010;
+const int ActHeal = 1020;
+const int ActCaps = 1021;
+const int ActGod = 1022;
+const int ActCatBase = 1100; // + индекс категории предметов
+const int ActGiveX1 = 1200;
+const int ActGiveX10 = 1201;
+const int ActGiveX100 = 1202;
+const int ActGiveX1000 = 1203;
+const int ActItemUp = 1210;
+const int ActItemDown = 1211;
+const int ActClearSearch = 1212;
+const int ActApplySearch = 1213;
+const int ActSpecialDec10 = 1300;
+const int ActSpecialDec1 = 1301;
+const int ActSpecialInc1 = 1302;
+const int ActSpecialInc10 = 1303;
+const int ActSpecialMax = 1304;
+const int ActSkillDec10 = 1310;
+const int ActSkillDec1 = 1311;
+const int ActSkillInc1 = 1312;
+const int ActSkillInc10 = 1313;
+const int ActSkillMax = 1314;
+const int ActSkillAll = 1315;
+const int ActSkillUp = 1316;
+const int ActSkillDown = 1317;
+const int ActTraitToggle = 1320;
+const int ActTraitClear = 1321;
+const int ActTraitUp = 1322;
+const int ActTraitDown = 1323;
+const int ActPerkDec1 = 1330;
+const int ActPerkInc1 = 1331;
+const int ActPerkClear = 1332;
+const int ActPerkUp = 1333;
+const int ActPerkDown = 1334;
+const int ActLocUp = 1340;
+const int ActLocDown = 1341;
+const int ActMapUp = 1342;
+const int ActMapDown = 1343;
+const int ActLocApplySearch = 1344;
+const int ActLocClearSearch = 1345;
+const int ActTpEntry = 1350;
+const int ActTpCoords = 1351;
+const int ActTpGlobal = 1352;
+const int ActExecCmd = 1360;
+
+// Высоты строк подобраны под LineHeight встроенного шрифта, чтобы тексты списков не слипались.
+const int ItemRows = 12;
+const int SkillRows = 12;
+const int TraitRows = 12;
+const int PerkRows = 12;
+const int LocRows = 13;
+const int MapRows = 5;
+const int ListRowH = 20;
+const int SpecialRowH = 22;
+const string WhitePixel = "art/intrface/white_pixel.png";
+
+// Состояние меню (клиентское, живёт между показами экрана).
+int CurTab = ActTabItems;
+int CurCategory = 0;
+int ItemScroll = 0;
+int SelectedItem = -1;
+int SelectedSpecial = 0;
+int SkillScroll = 0;
+int TraitScroll = 0;
+int PerkScroll = 0;
+int SelectedSkill = 0;
+int SelectedTrait = -1;
+int SelectedPerk = -1;
+int LocScroll = 0;
+int SelectedLoc = -1;
+int MapScroll = 0;
+int SelectedMap = -1;
+string SearchQuery = "";
+hstring[] FilteredItems = {};
+string LocSearchQuery = "";
+hstring[] FilteredLocations = {};
+
+// Регистрация ленивая: экран создаётся при первом открытии, когда ресурсы и спрайты уже готовы
+// (штатные экраны регистрируются в Gui::EngineCallback_Start через GuiScreens::InitializeScreens).
+bool DebugScreenRegistered = false;
+
+void EnsureDebugScreenRegistered()
+{
+    if (DebugScreenRegistered) {
+        return;
+    }
+
+    Gui::RegisterScreen(GuiScreen::DebugMenu, CreateDebugMenuScreen);
+    DebugScreenRegistered = true;
+}
+
+// Кнопка с числовым идентификатором действия: позволяет создавать однотипные кнопки без класса на каждую.
+class DebugButton : Gui::Button
+{
+    int ActionId = 0;
+
+    void OnLMouseClick() override
+    {
+        DebugMenu::OnButton(ActionId);
+    }
+}
+
+// Базовая ячейка-строка списка: текст берётся из виртуальных RowText/RowSelected, клик — RowClick.
+// Ячейки создаются клонированием прототипа (Grid.ResizeGrid), поэтому данных на экземпляр не храним —
+// только CellIndex, по которому читаем живое состояние Chosen.
+class DebugCell : Gui::Text
+{
+    int RowW = 100;
+    int RowH = 20;
+
+    void OnInit() override
+    {
+        SetHasOnDraw(true);
+        SetTextFont(FontBody);
+        SetTextColor(ColText);
+        SetTextFlags(FontFlag(int(FontFlag::CenterY)));
+        SetSize(RowW, RowH);
+    }
+
+    string RowText()
+    {
+        return "";
+    }
+
+    bool RowSelected()
+    {
+        return false;
+    }
+
+    void RowClick()
+    {
+    }
+
+    string get_Text() override
+    {
+        return RowText();
+    }
+
+    void OnDraw() override
+    {
+        SetTextColor(RowSelected() ? ColWhite : (IsHovered ? ColButtonHot : ColText));
+    }
+
+    // Роль списка для прокрутки колесом: 1 — предметы, 2 — локации, 0 — без прокрутки.
+    int WheelRole()
+    {
+        return 0;
+    }
+
+    void OnMouseClick(MouseButton button) override
+    {
+        if (button == MouseButton::WheelUp) {
+            DebugMenu::ScrollList(WheelRole(), -1);
+        }
+        else if (button == MouseButton::WheelDown) {
+            DebugMenu::ScrollList(WheelRole(), 1);
+        }
+    }
+
+    void OnLMouseClick() override
+    {
+        RowClick();
+    }
+}
+
+// Ячейка списка предметов.
+class ItemCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 326;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::ItemRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return DebugMenu::ItemRowSelected(CellIndex);
+    }
+
+    void RowClick() override
+    {
+        DebugMenu::ItemRowClick(CellIndex);
+    }
+
+    int WheelRole() override
+    {
+        return 1;
+    }
+}
+
+// Ячейка списка SPECIAL.
+class SpecialCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 292;
+        RowH = SpecialRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::SpecialRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return CellIndex == SelectedSpecial;
+    }
+
+    void RowClick() override
+    {
+        SelectedSpecial = CellIndex;
+    }
+}
+
+// Ячейка списка навыков.
+class SkillCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 332;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::SkillRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return SkillScroll + CellIndex == SelectedSkill;
+    }
+
+    void RowClick() override
+    {
+        SelectedSkill = SkillScroll + CellIndex;
+    }
+
+    int WheelRole() override
+    {
+        return 4;
+    }
+}
+
+// Ячейка списка трейтов.
+class TraitCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 292;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::TraitRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return TraitScroll + CellIndex == SelectedTrait;
+    }
+
+    void RowClick() override
+    {
+        SelectedTrait = TraitScroll + CellIndex;
+    }
+
+    int WheelRole() override
+    {
+        return 5;
+    }
+}
+
+// Ячейка списка перков.
+class PerkCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 332;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::PerkRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return PerkScroll + CellIndex == SelectedPerk;
+    }
+
+    void RowClick() override
+    {
+        SelectedPerk = PerkScroll + CellIndex;
+    }
+
+    int WheelRole() override
+    {
+        return 6;
+    }
+}
+
+// Ячейка списка локаций.
+class LocCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 332;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::LocRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return DebugMenu::LocRowSelected(CellIndex);
+    }
+
+    void RowClick() override
+    {
+        DebugMenu::LocRowClick(CellIndex);
+    }
+
+    int WheelRole() override
+    {
+        return 2;
+    }
+}
+
+// Ячейка списка субкарт (регионов) выбранной локации.
+class MapCell : DebugCell
+{
+    void OnInit() override
+    {
+        RowW = 284;
+        RowH = ListRowH;
+        DebugCell::OnInit();
+    }
+
+    string RowText() override
+    {
+        return DebugMenu::MapRowText(CellIndex);
+    }
+
+    bool RowSelected() override
+    {
+        return DebugMenu::MapRowSelected(CellIndex);
+    }
+
+    void RowClick() override
+    {
+        DebugMenu::MapRowClick(CellIndex);
+    }
+
+    int WheelRole() override
+    {
+        return 3;
+    }
+}
+
+// Сетка списка с обработкой колеса мыши (ScrollRole: 1 — предметы, 2 — локации).
+class ListGrid : Gui::Grid
+{
+    int ScrollRole = 0;
+
+    void OnMouseClick(MouseButton button) override
+    {
+        if (button == MouseButton::WheelUp) {
+            DebugMenu::ScrollList(ScrollRole, -1);
+        }
+        else if (button == MouseButton::WheelDown) {
+            DebugMenu::ScrollList(ScrollRole, 1);
+        }
+    }
+}
+
+// Корневой экран меню: строит статичный каркас один раз в OnInit, динамику обновляет в OnDraw.
+class DebugMenuScreen : Gui::Screen
+{
+    void OnInit() override
+    {
+        SetHasOnDraw(true);
+        SetModal(true);
+        SetCanMove(true, false);
+        SetCloseOnMiss(false);
+
+        SetSize(660, 470);
+        SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+        SetColor(ColBg);
+        CenterWindow();
+
+        AddText(this, "Title", 10, 6, 320, 18, "FOnline: TLA // Debug Menu", FontHead, ColText);
+        AddText(this, "Version", 250, 8, 130, 14, "[Client GUI v1.0]", FontBody, ColDim);
+        AddButton(this, "BtnClose", 596, 4, 58, 20, "Закрыть", ActClose, ColButton);
+
+        BuildHeader();
+        BuildItemsPane();
+        BuildStatsPane();
+        BuildPerksPane();
+        BuildTeleportPane();
+        BuildCommandBar();
+
+        SetTab(ActTabItems);
+    }
+
+    void OnDraw() override
+    {
+        UpdateDynamic();
+    }
+
+    void OnShow() override
+    {
+        CenterWindow();
+    }
+
+    // Корневой экран с Anchor::None движок центрирует сам (см. Object::_RefreshPosition:
+    // newPos = _BasePos + (screen - baseSize)/2). Обнуляем _BasePos, иначе смещение удваивается
+    // и окно уезжает в правый нижний угол.
+    void CenterWindow()
+    {
+        SetPosition(0, 0);
+    }
+
+    void BuildHeader()
+    {
+        AddButton(this, "TabItems", 10, 28, 110, 22, "Предметы", ActTabItems, ColButton);
+        AddButton(this, "TabStats", 124, 28, 110, 22, "S.P.E.C.I.A.L.", ActTabStats, ColButton);
+        AddButton(this, "TabPerks", 238, 28, 110, 22, "Перки & Трейты", ActTabPerks, ColButton);
+        AddButton(this, "TabTeleport", 352, 28, 110, 22, "Телепорт", ActTabTeleport, ColButton);
+
+        AddButton(this, "QuickHeal", 468, 28, 58, 22, "Лечить", ActHeal, ColButton);
+        AddButton(this, "QuickCaps", 530, 28, 70, 22, "10к крышек", ActCaps, ColButton);
+        AddButton(this, "QuickGod", 604, 28, 50, 22, "God", ActGod, ColButton);
+    }
+
+    // Панель вкладки "Предметы": категории, поиск, список, инспектор с кнопками выдачи.
+    void BuildItemsPane()
+    {
+        Gui::Panel pane = AddPanel(this, "PaneItems", 8, 54, 644, 360, ColPanel);
+        pane.SetActive(false);
+
+        string[] cats = {"Оружие", "Патроны", "Броня", "Препараты", "Контейнеры", "Ключи", "Разное"};
+        for (int i = 0; i < cats.length(); i++) {
+            AddButton(pane, "Cat" + i, i * 84, 2, 80, 20, cats[i], ActCatBase + i, ColButton);
+        }
+
+        AddText(pane, "SearchLabel", 0, 28, 42, 16, "Поиск:", FontBody, ColDim);
+        Gui::TextInput search = AddInput(pane, "SearchInput", 44, 26, 200, 18);
+        search.SetText("");
+        AddButton(pane, "SearchApply", 248, 26, 66, 18, "Найти", ActApplySearch, ColAccent);
+        AddButton(pane, "SearchClear", 318, 26, 66, 18, "Очистить", ActClearSearch, ColButton);
+        AddButton(pane, "ItemUp", 0, 296, 26, 22, "^", ActItemUp, ColButton);
+        AddButton(pane, "ItemDown", 28, 296, 26, 22, "v", ActItemDown, ColButton);
+
+        ListGrid grid = AddListGrid(pane, "ItemGrid", 0, 52, 330, ItemRows * ListRowH, ItemRows, 1);
+        ItemCell proto = ItemCell();
+        SetupGrid(grid, proto, ItemRows);
+
+        Gui::Panel insp = AddPanel(pane, "Inspector", 338, 52, 300, 306, ColPanelAlt);
+        AddText(insp, "SelName", 6, 4, 288, 18, "", FontHead, ColText);
+        AddText(insp, "SelProto", 6, 24, 288, 16, "", FontBody, ColDim);
+        AddPanel(insp, "SelPic", 6, 44, 64, 64, ColWhite);
+        AddText(insp, "SelDesc", 76, 44, 218, 120, "", FontBody, ColText);
+        AddText(insp, "GiveLabel", 6, 170, 200, 16, "Выдать:", FontBody, ColDim);
+        AddButton(insp, "GiveX1", 6, 188, 66, 22, "x1", ActGiveX1, ColGreen);
+        AddButton(insp, "GiveX10", 74, 188, 66, 22, "x10", ActGiveX10, ColGreen);
+        AddButton(insp, "GiveX100", 142, 188, 66, 22, "x100", ActGiveX100, ColGreen);
+        AddButton(insp, "GiveX1000", 210, 188, 84, 22, "x1000", ActGiveX1000, ColGreen);
+    }
+
+    // Панель вкладки SPECIAL/навыки: два списка с общими кнопками шага.
+    void BuildStatsPane()
+    {
+        Gui::Panel pane = AddPanel(this, "PaneStats", 8, 54, 644, 360, ColPanel);
+        pane.SetActive(false);
+
+        Gui::Panel left = AddPanel(pane, "StatsLeft", 0, 0, 300, 344, ColPanelAlt);
+        AddText(left, "SpecialHeader", 6, 2, 280, 18, "S.P.E.C.I.A.L.", FontHead, ColRed);
+        ListGrid special = AddListGrid(left, "SpecialGrid", 0, 22, 296, 7 * SpecialRowH, 7, 0);
+        SpecialCell specialProto = SpecialCell();
+        SetupGrid(special, specialProto, 7);
+
+        AddButton(left, "SpD10", 0, 180, 56, 22, "-10", ActSpecialDec10, ColButton);
+        AddButton(left, "SpD1", 60, 180, 56, 22, "-1", ActSpecialDec1, ColButton);
+        AddButton(left, "SpI1", 120, 180, 56, 22, "+1", ActSpecialInc1, ColButton);
+        AddButton(left, "SpI10", 180, 180, 56, 22, "+10", ActSpecialInc10, ColButton);
+        AddButton(left, "SpMax", 240, 180, 56, 22, "MAX", ActSpecialMax, ColButton);
+
+        AddText(left, "Derived", 6, 208, 292, 130, "", FontBody, ColDim);
+
+        Gui::Panel right = AddPanel(pane, "StatsRight", 304, 0, 338, 344, ColPanelAlt);
+        AddText(right, "SkillsHeader", 6, 2, 320, 18, "Навыки", FontHead, ColYellow);
+        ListGrid skills = AddListGrid(right, "SkillGrid", 0, 22, 336, SkillRows * ListRowH, SkillRows, 0);
+        SkillCell skillProto = SkillCell();
+        SetupGrid(skills, skillProto, SkillRows);
+        AddButton(right, "SkUp", 0, 264, 60, 20, "^", ActSkillUp, ColButton);
+        AddButton(right, "SkDown", 64, 264, 60, 20, "v", ActSkillDown, ColButton);
+
+        AddButton(right, "SkD10", 0, 288, 56, 22, "-10", ActSkillDec10, ColButton);
+        AddButton(right, "SkD1", 60, 288, 56, 22, "-1", ActSkillDec1, ColButton);
+        AddButton(right, "SkI1", 120, 288, 56, 22, "+1", ActSkillInc1, ColButton);
+        AddButton(right, "SkI10", 180, 288, 56, 22, "+10", ActSkillInc10, ColButton);
+        AddButton(right, "SkMax", 240, 288, 46, 22, "MAX", ActSkillMax, ColButton);
+        AddButton(right, "SkAll", 288, 288, 48, 22, "Все", ActSkillAll, ColButton);
+    }
+
+    // Панель вкладки перков и трейтов.
+    void BuildPerksPane()
+    {
+        Gui::Panel pane = AddPanel(this, "PanePerks", 8, 54, 644, 360, ColPanel);
+        pane.SetActive(false);
+
+        Gui::Panel left = AddPanel(pane, "PerksLeft", 0, 0, 300, 344, ColPanelAlt);
+        AddText(left, "TraitsHeader", 6, 2, 280, 18, "Трейты", FontHead, ColGreen);
+        ListGrid traits = AddListGrid(left, "TraitGrid", 0, 22, 296, TraitRows * ListRowH, TraitRows, 0);
+        TraitCell traitProto = TraitCell();
+        SetupGrid(traits, traitProto, TraitRows);
+        AddButton(left, "TrUp", 0, 264, 60, 20, "^", ActTraitUp, ColButton);
+        AddButton(left, "TrDown", 64, 264, 60, 20, "v", ActTraitDown, ColButton);
+
+        AddButton(left, "TraitToggle", 0, 288, 140, 22, "Переключить", ActTraitToggle, ColButton);
+        AddButton(left, "TraitClear", 146, 288, 140, 22, "Сбросить все", ActTraitClear, ColButton);
+
+        Gui::Panel right = AddPanel(pane, "PerksRight", 304, 0, 338, 344, ColPanelAlt);
+        AddText(right, "PerksHeader", 6, 2, 320, 18, "Перки", FontHead, ColBlue);
+        ListGrid perks = AddListGrid(right, "PerkGrid", 0, 22, 336, PerkRows * ListRowH, PerkRows, 0);
+        PerkCell perkProto = PerkCell();
+        SetupGrid(perks, perkProto, PerkRows);
+        AddButton(right, "PkUp", 0, 264, 60, 20, "^", ActPerkUp, ColButton);
+        AddButton(right, "PkDown", 64, 264, 60, 20, "v", ActPerkDown, ColButton);
+
+        AddButton(right, "PerkD1", 0, 288, 76, 22, "-1", ActPerkDec1, ColButton);
+        AddButton(right, "PerkI1", 80, 288, 76, 22, "+1", ActPerkInc1, ColButton);
+        AddButton(right, "PerkClear", 160, 288, 120, 22, "Сбросить все", ActPerkClear, ColButton);
+    }
+
+    // Панель вкладки телепорта: список локаций и координаты.
+    void BuildTeleportPane()
+    {
+        Gui::Panel pane = AddPanel(this, "PaneTeleport", 8, 54, 644, 360, ColPanel);
+        pane.SetActive(false);
+
+        Gui::Panel left = AddPanel(pane, "TpLeft", 0, 0, 340, 344, ColPanelAlt);
+        AddText(left, "LocHeader", 6, 2, 320, 18, "Локации", FontHead, ColYellow);
+        AddText(left, "LocSearchLabel", 6, 24, 38, 16, "Поиск:", FontBody, ColDim);
+        Gui::TextInput locSearch = AddInput(left, "LocSearchInput", 44, 22, 180, 18);
+        locSearch.SetText("");
+        AddButton(left, "LocSearchApply", 228, 22, 52, 18, "Найти", ActLocApplySearch, ColAccent);
+        AddButton(left, "LocSearchClear", 284, 22, 52, 18, "Сброс", ActLocClearSearch, ColButton);
+        ListGrid locs = AddListGrid(left, "LocGrid", 0, 44, 336, LocRows * ListRowH, LocRows, 2);
+        LocCell locProto = LocCell();
+        SetupGrid(locs, locProto, LocRows);
+        AddButton(left, "LocUp", 0, 308, 60, 22, "^", ActLocUp, ColButton);
+        AddButton(left, "LocDown", 64, 308, 60, 22, "v", ActLocDown, ColButton);
+
+        Gui::Panel right = AddPanel(pane, "TpRight", 344, 0, 300, 344, ColPanelAlt);
+        AddText(right, "TpInfo", 6, 4, 288, 56, "Выберите локацию слева.", FontBody, ColText);
+        AddText(right, "TpMapLabel", 6, 62, 200, 16, "Регион (субкарта):", FontBody, ColDim);
+
+        ListGrid maps = AddListGrid(right, "MapGrid", 6, 80, 288, MapRows * ListRowH, MapRows, 3);
+        MapCell mapProto = MapCell();
+        SetupGrid(maps, mapProto, MapRows);
+        AddButton(right, "MapUp", 6, 182, 26, 20, "^", ActMapUp, ColButton);
+        AddButton(right, "MapDown", 34, 182, 26, 20, "v", ActMapDown, ColButton);
+
+        AddText(right, "TpXLabel", 70, 184, 20, 16, "X:", FontBody, ColDim);
+        Gui::TextInput tx = AddInput(right, "TpX", 92, 182, 60, 18);
+        tx.SetText("0");
+        AddText(right, "TpYLabel", 158, 184, 20, 16, "Y:", FontBody, ColDim);
+        Gui::TextInput ty = AddInput(right, "TpY", 180, 182, 60, 18);
+        ty.SetText("0");
+
+        AddButton(right, "TpEntry", 6, 208, 90, 22, "В регион", ActTpEntry, ColBlue);
+        AddButton(right, "TpCoords", 100, 208, 90, 22, "По X/Y", ActTpCoords, ColBlue);
+        AddButton(right, "TpGlobal", 194, 208, 100, 22, "Глоб. карта", ActTpGlobal, ColBlue);
+
+        Gui::Panel hintBox = AddPanel(right, "TpHintBox", 6, 236, 288, 60, ColPanel);
+        AddText(hintBox,
+                "TpHint",
+                4,
+                2,
+                280,
+                56,
+                "Выберите локацию и регион (субкарту), затем «В регион» или «По X/Y»." + "\n" + "Команды уходят на сервер как ~tp.",
+                FontBody,
+                ColDim);
+    }
+
+    // Нижняя командная строка: ручной ввод ~команды и локальный эхо-ответ.
+    void BuildCommandBar()
+    {
+        Gui::TextInput cmd = AddInput(this, "CmdInput", 10, 418, 558, 24);
+        cmd.SetText("");
+        AddButton(this, "CmdExec", 572, 418, 80, 24, "Выполнить", ActExecCmd, ColAccent);
+        AddText(this, "CmdResponse", 10, 446, 642, 20, "", FontBody, ColDim);
+    }
+}
+
+// Создаёт экран (вызывается Gui::RegisterScreen и Gui::ShowScreen).
+Gui::Screen
+CreateDebugMenuScreen()
+{
+    DebugMenuScreen screen = DebugMenuScreen();
+    screen.Init(null);
+    return screen;
+}
+
+// --- Фабрики виджетов ------------------------------------------------------------------------
+
+Gui::Panel AddPanel(Gui::Object parent, string name, int x, int y, int w, int h, ucolor color)
+{
+    Gui::Panel p = Gui::Panel();
+    p.Init(parent);
+    p.SetName(name);
+    p.SetPosition(x, y);
+    p.SetSize(w, h);
+    p.SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+    p.SetColor(color);
+    return p;
+}
+
+Gui::Text AddText(Gui::Object parent, string name, int x, int y, int w, int h, string text, FontType font, ucolor color)
+{
+    Gui::Text t = Gui::Text();
+    t.Init(parent);
+    t.SetName(name);
+    t.SetPosition(x, y);
+    if (w > 0 || h > 0) {
+        t.SetSize(w, h);
+    }
+
+    t.SetText(text);
+    t.SetTextFont(font);
+    t.SetTextColor(color);
+    return t;
+}
+
+Gui::TextInput AddInput(Gui::Object parent, string name, int x, int y, int w, int h)
+{
+    Gui::TextInput ti = Gui::TextInput();
+    ti.Init(parent);
+    ti.SetName(name);
+    ti.SetPosition(x, y);
+    ti.SetSize(w, h);
+    ti.SetTextColor(ColText);
+    ti.SetTextFocusedColor(ColWhite);
+    ti.SetTextFont(FontBody);
+    return ti;
+}
+
+// Кнопка с рамкой: подложка-бордюр и вложенная тонированная кнопка. Позиция/размер — внешние.
+DebugButton AddButton(Gui::Object parent, string name, int x, int y, int w, int h, string label, int actionId, ucolor color)
+{
+    AddPanel(parent, name + "Frame", x, y, w, h, ColBorder);
+
+    DebugButton b = DebugButton();
+    b.Init(parent);
+    b.SetName(name);
+    b.SetPosition(x + 1, y + 1);
+    b.SetSize(w - 2, h - 2);
+    b.SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+    b.SetPressedImage(WhitePixel, SpriteLayout::Stretch);
+    b.SetColor(color);
+    b.ActionId = actionId;
+
+    Gui::Text lbl = AddText(b, name + "Lbl", 0, 0, w - 2, h - 2, label, FontBody, ColText);
+    lbl.SetNotHittable(true);
+    lbl.SetTextFlags(FontFlag(int(FontFlag::CenterX) | int(FontFlag::CenterY)));
+    return b;
+}
+
+ListGrid AddListGrid(Gui::Object parent, string name, int x, int y, int w, int h, int rows, int scrollRole)
+{
+    ListGrid g = ListGrid();
+    g.Init(parent);
+    g.SetName(name);
+    g.SetPosition(x, y);
+    g.SetSize(w, h);
+    g.SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+    g.SetColor(ColPanelAlt);
+    g.SetCropContent(true);
+    g.SetColumns(1);
+    g.SetPadding(0, 0);
+    g.ScrollRole = scrollRole;
+    g.SetGridSize(rows);
+    return g;
+}
+
+// Привязывает прототип-ячейку к сетке и создаёт видимые строки.
+void SetupGrid(ListGrid grid, DebugCell proto, int rows)
+{
+    proto.Init(grid);
+    proto.SetName(grid.Name + "Proto");
+    grid.SetCellPrototype(grid.Name + "Proto");
+    grid.SetGridSize(rows);
+    grid.ResizeGrid(rows);
+}
+
+// --- Переключение вкладок и действия кнопок --------------------------------------------------
+
+void SetTab(int tab)
+{
+    CurTab = tab;
+    SetPaneActive("PaneItems", tab == ActTabItems);
+    SetPaneActive("PaneStats", tab == ActTabStats);
+    SetPaneActive("PanePerks", tab == ActTabPerks);
+    SetPaneActive("PaneTeleport", tab == ActTabTeleport);
+
+    SetButtonColor("TabItems", tab == ActTabItems ? ColAccent : ColButton);
+    SetButtonColor("TabStats", tab == ActTabStats ? ColAccent : ColButton);
+    SetButtonColor("TabPerks", tab == ActTabPerks ? ColAccent : ColButton);
+    SetButtonColor("TabTeleport", tab == ActTabTeleport ? ColAccent : ColButton);
+
+    if (tab == ActTabItems) {
+        RefreshItems();
+    }
+    else if (tab == ActTabTeleport) {
+        RefreshLocations();
+    }
+}
+
+void SetPaneActive(string name, bool active)
+{
+    Gui::Panel? pane = FindPanel(name);
+    if (pane != null) {
+        pane.SetActive(active);
+    }
+}
+
+void SetButtonColor(string name, ucolor color)
+{
+    Gui::Button? b = FindButton(name);
+    if (b != null) {
+        b.SetColor(color);
+    }
+}
+
+// Центральный обработчик действий кнопок.
+void OnButton(int actionId)
+{
+    if (actionId == ActClose) {
+        Gui::HideScreen(GuiScreen::DebugMenu);
+        return;
+    }
+    if (actionId == ActTabItems || actionId == ActTabStats || actionId == ActTabPerks || actionId == ActTabTeleport) {
+        SetTab(actionId);
+        return;
+    }
+    if (actionId == ActHeal) {
+        SendCommand("heal");
+        return;
+    }
+    if (actionId == ActCaps) {
+        SendCommand("give " + string(Content::Item::bottle_caps) + " 10000");
+        return;
+    }
+    if (actionId == ActGod) {
+        SendCommand("godmode");
+        return;
+    }
+
+    if (actionId >= ActCatBase && actionId < ActCatBase + 16) {
+        CurCategory = actionId - ActCatBase;
+        ItemScroll = 0;
+        SelectedItem = -1;
+        RefreshItems();
+        return;
+    }
+    if (actionId == ActApplySearch) {
+        ItemScroll = 0;
+        RefreshItems();
+        return;
+    }
+    if (actionId == ActClearSearch) {
+        Gui::TextInput? input = FindTextInput("SearchInput");
+        if (input != null) {
+            input.SetText("");
+        }
+
+        SearchQuery = "";
+        RefreshItems();
+        return;
+    }
+    if (actionId == ActItemUp) {
+        ScrollList(1, -1);
+        return;
+    }
+    if (actionId == ActItemDown) {
+        ScrollList(1, 1);
+        return;
+    }
+    if (actionId >= ActGiveX1 && actionId <= ActGiveX1000) {
+        int count = actionId == ActGiveX1 ? 1 : (actionId == ActGiveX10 ? 10 : (actionId == ActGiveX100 ? 100 : 1000));
+        string pid = SelectedItemPid();
+        if (!pid.isEmpty()) {
+            SendCommand("give " + pid + " " + count);
+        }
+
+        return;
+    }
+
+    if (actionId == ActSpecialDec10 || actionId == ActSpecialDec1 || actionId == ActSpecialInc1 || actionId == ActSpecialInc10 || actionId == ActSpecialMax) {
+        ApplySpecial(actionId);
+        return;
+    }
+    if (actionId >= ActSkillDec10 && actionId <= ActSkillAll) {
+        ApplySkill(actionId);
+        return;
+    }
+    if (actionId == ActSkillUp) {
+        ScrollList(4, -1);
+        return;
+    }
+    if (actionId == ActSkillDown) {
+        ScrollList(4, 1);
+        return;
+    }
+    if (actionId == ActTraitToggle) {
+        ToggleTrait();
+        return;
+    }
+    if (actionId == ActTraitClear) {
+        SendCommand("cleartraits");
+        return;
+    }
+    if (actionId == ActTraitUp) {
+        ScrollList(5, -1);
+        return;
+    }
+    if (actionId == ActTraitDown) {
+        ScrollList(5, 1);
+        return;
+    }
+    if (actionId == ActPerkDec1 || actionId == ActPerkInc1 || actionId == ActPerkClear) {
+        ApplyPerk(actionId);
+        return;
+    }
+    if (actionId == ActPerkUp) {
+        ScrollList(6, -1);
+        return;
+    }
+    if (actionId == ActPerkDown) {
+        ScrollList(6, 1);
+        return;
+    }
+    if (actionId == ActLocApplySearch) {
+        LocScroll = 0;
+        RefreshLocations();
+        return;
+    }
+    if (actionId == ActLocClearSearch) {
+        Gui::TextInput? search = FindTextInput("LocSearchInput");
+        if (search != null) {
+            search.SetText("");
+        }
+
+        LocSearchQuery = "";
+        LocScroll = 0;
+        RefreshLocations();
+        return;
+    }
+    if (actionId == ActLocUp) {
+        ScrollList(2, -1);
+        return;
+    }
+    if (actionId == ActLocDown) {
+        ScrollList(2, 1);
+        return;
+    }
+    if (actionId == ActMapUp) {
+        ScrollList(3, -1);
+        return;
+    }
+    if (actionId == ActMapDown) {
+        ScrollList(3, 1);
+        return;
+    }
+    if (actionId == ActTpEntry || actionId == ActTpCoords || actionId == ActTpGlobal) {
+        ApplyTeleport(actionId);
+        return;
+    }
+    if (actionId == ActExecCmd) {
+        ExecuteCommandBar();
+    }
+}
+
+// Отправка команды на сервер единым путём (как консольный ввод "~...").
+void SendCommand(string command)
+{
+    command = command.trim();
+    if (command.isEmpty() || !HasCurPlayer) {
+        return;
+    }
+
+    CurPlayer.ServerCall.DebugRunCommand(command);
+    SetResponse("> " + command);
+}
+
+void SetResponse(string text)
+{
+    Gui::Text? t = FindText("CmdResponse");
+    if (t != null) {
+        t.SetText(text);
+    }
+}
+
+void ExecuteCommandBar()
+{
+    Gui::TextInput? input = FindTextInput("CmdInput");
+    if (input == null) {
+        return;
+    }
+
+    string cmd = input.Text.trim();
+    if (cmd.isEmpty()) {
+        return;
+    }
+
+    SendCommand(cmd);
+    input.SetText("");
+}
+
+// --- Данные предметов ------------------------------------------------------------------------
+
+hstring[] CategoryItems(int category)
+{
+    switch (category) {
+    case 0:
+        return DebugCatalog::Weapons;
+    case 1:
+        return DebugCatalog::Ammo;
+    case 2:
+        return DebugCatalog::Armor;
+    case 3:
+        return DebugCatalog::Drugs;
+    case 4:
+        return DebugCatalog::Containers;
+    case 5:
+        return DebugCatalog::Keys;
+    default:
+        return DebugCatalog::Misc;
+    }
+}
+
+void RefreshItems()
+{
+    // Синхронизируем строку поиска с полем ввода и пересобираем отфильтрованный список.
+    Gui::TextInput? input = FindTextInput("SearchInput");
+    if (input != null) {
+        SearchQuery = input.Text.trim();
+    }
+
+    string query = SearchQuery.lower();
+    hstring[] source = CategoryItems(CurCategory);
+    FilteredItems = array<hstring>();
+
+    for (int i = 0; i < source.length(); i++) {
+        hstring pid = source[i];
+        if (query.isEmpty()) {
+            FilteredItems.insertLast(pid);
+            continue;
+        }
+
+        string name = ItemName(pid).lower();
+        if (name.find(query) != -1 || string(pid).lower().find(query) != -1) {
+            FilteredItems.insertLast(pid);
+        }
+    }
+
+    int maxScroll = int(FilteredItems.length()) - ItemRows;
+    if (maxScroll < 0) {
+        maxScroll = 0;
+    }
+    if (ItemScroll > maxScroll) {
+        ItemScroll = maxScroll;
+    }
+    if (ItemScroll < 0) {
+        ItemScroll = 0;
+    }
+    if (SelectedItem >= int(FilteredItems.length())) {
+        SelectedItem = -1;
+    }
+
+    Gui::Grid? grid = FindGrid("ItemGrid");
+    if (grid != null) {
+        grid.ResizeGrid(ItemRows);
+    }
+
+    UpdateItemInspector();
+}
+
+string ItemRowText(int cellIndex)
+{
+    int index = ItemScroll + cellIndex;
+    if (index < 0 || index >= int(FilteredItems.length())) {
+        return "";
+    }
+
+    return ItemName(FilteredItems[index]);
+}
+
+bool ItemRowSelected(int cellIndex)
+{
+    return ItemScroll + cellIndex == SelectedItem;
+}
+
+void ItemRowClick(int cellIndex)
+{
+    int index = ItemScroll + cellIndex;
+    if (index < 0 || index >= int(FilteredItems.length())) {
+        return;
+    }
+
+    SelectedItem = index;
+    UpdateItemInspector();
+}
+
+string SelectedItemPid()
+{
+    if (SelectedItem < 0 || SelectedItem >= int(FilteredItems.length())) {
+        return "";
+    }
+
+    return string(FilteredItems[SelectedItem]);
+}
+
+void UpdateItemInspector()
+{
+    Gui::Text? nameText = FindText("SelName");
+    Gui::Text? protoText = FindText("SelProto");
+    Gui::Text? descText = FindText("SelDesc");
+    Gui::Panel? pic = FindPanel("SelPic");
+
+    if (SelectedItem < 0 || SelectedItem >= int(FilteredItems.length())) {
+        if (nameText != null) {
+            nameText.SetText("");
+        }
+        if (protoText != null) {
+            protoText.SetText("");
+        }
+        if (descText != null) {
+            descText.SetText("");
+        }
+        if (pic != null) {
+            pic.SetColor(ColPanel);
+            pic.SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+        }
+
+        return;
+    }
+
+    hstring pid = FilteredItems[SelectedItem];
+    ProtoItem proto = Game.GetProtoItem(pid);
+
+    if (nameText != null) {
+        nameText.SetText(ItemName(pid));
+    }
+    if (protoText != null) {
+        protoText.SetText(string(pid) + "   Вес: " + proto.Weight + "   Цена: " + proto.Cost);
+    }
+    if (descText != null) {
+        descText.SetText(Game.GetText(TextPackKey(TextPackName::Items, pid, "Desc")));
+    }
+    if (pic != null) {
+        // Тонировка панели умножается на спрайт: для иконки ставим белый цвет, иначе картинка темнеет.
+        pic.SetColor(ColWhite);
+        if (proto.PicInv == EMPTY_HSTRING) {
+            pic.SetBackgroundImage(WhitePixel, SpriteLayout::Stretch);
+        }
+        else {
+            pic.SetBackgroundImage(proto.PicInv, SpriteLayout::Zoom);
+        }
+    }
+}
+
+// --- SPECIAL и навыки ------------------------------------------------------------------------
+
+void ApplySpecial(int actionId)
+{
+    if (!HasChosen || SelectedSpecial < 0 || SelectedSpecial >= int(CritterPropertyGroup::SpecialBase.length())) {
+        return;
+    }
+
+    CritterProperty prop = CritterPropertyGroup::SpecialBase[SelectedSpecial];
+    if (actionId == ActSpecialMax) {
+        SendCommand("setstats 10 10 10 10 10 10 10");
+        return;
+    }
+
+    int value = Chosen.GetAsInt(prop);
+    if (actionId == ActSpecialDec10) {
+        value -= 10;
+    }
+    else if (actionId == ActSpecialDec1) {
+        value -= 1;
+    }
+    else if (actionId == ActSpecialInc1) {
+        value += 1;
+    }
+    else {
+        value += 10;
+    }
+
+    value = Math::Clamp(value, 1, 10);
+    SendCommand("set " + Game.EnumToString(prop) + " " + value);
+}
+
+void ApplySkill(int actionId)
+{
+    if (!HasChosen || SelectedSkill < 0 || SelectedSkill >= int(CritterPropertyGroup::Skills.length())) {
+        return;
+    }
+
+    if (actionId == ActSkillMax || actionId == ActSkillAll) {
+        int all = actionId == ActSkillMax ? 200 : 100;
+        SendCommand("setskills all " + all);
+        return;
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Skills[SelectedSkill];
+    int value = Chosen.GetAsInt(prop);
+    if (actionId == ActSkillDec10) {
+        value -= 10;
+    }
+    else if (actionId == ActSkillDec1) {
+        value -= 1;
+    }
+    else if (actionId == ActSkillInc1) {
+        value += 1;
+    }
+    else {
+        value += 10;
+    }
+
+    value = Math::Clamp(value, 0, 300);
+    SendCommand("set " + Game.EnumToString(prop) + " " + value);
+}
+
+string SpecialRowText(int index)
+{
+    if (!HasChosen || index < 0 || index >= int(CritterPropertyGroup::SpecialBase.length())) {
+        return "";
+    }
+
+    CritterProperty prop = CritterPropertyGroup::SpecialBase[index];
+    return MsgStr::GetParamNameText(prop) + "   " + Chosen.GetAsInt(prop);
+}
+
+int SkillCount()
+{
+    return int(CritterPropertyGroup::Skills.length());
+}
+
+int TraitCount()
+{
+    return int(CritterPropertyGroup::Traits.length());
+}
+
+int PerkCount()
+{
+    return int(CritterPropertyGroup::Perks.length());
+}
+
+string SkillRowText(int cellIndex)
+{
+    int index = SkillScroll + cellIndex;
+    if (!HasChosen || index < 0 || index >= SkillCount()) {
+        return "";
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Skills[index];
+    string tag = IsTagSkill(prop) ? "* " : "  ";
+    return tag + MsgStr::GetParamNameText(prop) + "   " + Chosen.GetAsInt(prop);
+}
+
+bool IsTagSkill(CritterProperty prop)
+{
+    if (!HasChosen) {
+        return false;
+    }
+
+    return Chosen.TagSkill1 == prop || Chosen.TagSkill2 == prop || Chosen.TagSkill3 == prop;
+}
+
+// --- Трейты и перки --------------------------------------------------------------------------
+
+string TraitRowText(int cellIndex)
+{
+    int index = TraitScroll + cellIndex;
+    if (!HasChosen || index < 0 || index >= TraitCount()) {
+        return "";
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Traits[index];
+    bool active = Chosen.GetAsInt(prop) != 0;
+    return (active ? "[x] " : "[ ] ") + MsgStr::GetParamNameText(prop);
+}
+
+void ToggleTrait()
+{
+    if (!HasChosen || SelectedTrait < 0 || SelectedTrait >= int(CritterPropertyGroup::Traits.length())) {
+        return;
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Traits[SelectedTrait];
+    string name = Game.EnumToString(prop);
+    if (Chosen.GetAsInt(prop) != 0) {
+        SendCommand("removetrait " + name);
+    }
+    else {
+        SendCommand("addtrait " + name);
+    }
+}
+
+string PerkRowText(int cellIndex)
+{
+    int index = PerkScroll + cellIndex;
+    if (!HasChosen || index < 0 || index >= PerkCount()) {
+        return "";
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Perks[index];
+    int rank = Chosen.GetAsInt(prop);
+    return MsgStr::GetParamNameText(prop) + (rank > 0 ? "   ур." + rank : "");
+}
+
+void ApplyPerk(int actionId)
+{
+    if (actionId == ActPerkClear) {
+        SendCommand("clearperks");
+        return;
+    }
+
+    if (!HasChosen || SelectedPerk < 0 || SelectedPerk >= int(CritterPropertyGroup::Perks.length())) {
+        return;
+    }
+
+    CritterProperty prop = CritterPropertyGroup::Perks[SelectedPerk];
+    int value = Chosen.GetAsInt(prop) + (actionId == ActPerkDec1 ? -1 : 1);
+    value = Math::Clamp(value, 0, 10);
+    SendCommand("setperk " + Game.EnumToString(prop) + " " + value);
+}
+
+// --- Локации и телепорт ----------------------------------------------------------------------
+
+// Список локаций для телепорта берём из сгенерированного каталога (Content::Location), а не из
+// GlobalMapLocations::GMLocations: тот пуст, пока клиент не синхронизировал глобальную карту.
+// Фильтр по имени/pid — как в списке предметов.
+void RefreshLocations()
+{
+    Gui::TextInput? input = FindTextInput("LocSearchInput");
+    if (input != null) {
+        LocSearchQuery = input.Text.trim();
+    }
+
+    string query = LocSearchQuery.lower();
+    FilteredLocations = array<hstring>();
+
+    for (int i = 0; i < int(DebugCatalog::Locations.length()); i++) {
+        hstring pid = DebugCatalog::Locations[i];
+        if (query.isEmpty()) {
+            FilteredLocations.insertLast(pid);
+            continue;
+        }
+
+        string name = Game.GetText(MsgStr::LocNameKey(pid)).lower();
+        if (name.find(query) != -1 || string(pid).lower().find(query) != -1) {
+            FilteredLocations.insertLast(pid);
+        }
+    }
+
+    int maxScroll = int(FilteredLocations.length()) - LocRows;
+    LocScroll = Math::Clamp(LocScroll, 0, Math::Max(0, maxScroll));
+    if (SelectedLoc >= int(FilteredLocations.length())) {
+        SelectedLoc = -1;
+        SelectedMap = -1;
+    }
+
+    Gui::Grid? grid = FindGrid("LocGrid");
+    if (grid != null) {
+        grid.ResizeGrid(LocRows);
+    }
+}
+
+int LocCount()
+{
+    return int(FilteredLocations.length());
+}
+
+hstring LocPidAt(int index)
+{
+    if (index < 0 || index >= LocCount()) {
+        return EMPTY_HSTRING;
+    }
+
+    return FilteredLocations[index];
+}
+
+// Субкарты (регионы) выбранной локации — из того же сгенерированного каталога.
+hstring[] SelectedLocationMaps()
+{
+    if (SelectedLoc < 0 || SelectedLoc >= LocCount()) {
+        return array<hstring>();
+    }
+
+    return DebugCatalog::GetLocationMaps(LocPidAt(SelectedLoc));
+}
+
+int MapCount()
+{
+    return int(SelectedLocationMaps().length());
+}
+
+hstring MapPidAt(int index)
+{
+    if (index < 0 || index >= MapCount()) {
+        return EMPTY_HSTRING;
+    }
+
+    return SelectedLocationMaps()[index];
+}
+
+string MapRowText(int cellIndex)
+{
+    int index = MapScroll + cellIndex;
+    if (SelectedLoc < 0 || index < 0 || index >= MapCount()) {
+        return "";
+    }
+
+    string name = Game.GetText(MsgStr::LocMapNameKey(LocPidAt(SelectedLoc), index));
+    if (name.isEmpty()) {
+        name = string(MapPidAt(index));
+    }
+
+    return name;
+}
+
+bool MapRowSelected(int cellIndex)
+{
+    return MapScroll + cellIndex == SelectedMap;
+}
+
+void MapRowClick(int cellIndex)
+{
+    int index = MapScroll + cellIndex;
+    if (index < 0 || index >= MapCount()) {
+        return;
+    }
+
+    SelectedMap = index;
+}
+
+string LocRowText(int cellIndex)
+{
+    int index = LocScroll + cellIndex;
+    if (index < 0 || index >= LocCount()) {
+        return "";
+    }
+
+    hstring pid = LocPidAt(index);
+    return Game.GetText(MsgStr::LocNameKey(pid)) + "   (" + string(pid) + ")";
+}
+
+bool LocRowSelected(int cellIndex)
+{
+    return LocScroll + cellIndex == SelectedLoc;
+}
+
+void LocRowClick(int cellIndex)
+{
+    int index = LocScroll + cellIndex;
+    if (index < 0 || index >= LocCount()) {
+        return;
+    }
+
+    SelectedLoc = index;
+    SelectedMap = -1;
+    MapScroll = 0;
+}
+
+void ApplyTeleport(int actionId)
+{
+    if (actionId == ActTpGlobal) {
+        SendCommand("tp global");
+        return;
+    }
+
+    string pid = SelectedLocPid();
+    if (pid.isEmpty()) {
+        SetResponse("Локация не выбрана");
+        return;
+    }
+
+    string mapPid = SelectedMapPid();
+
+    if (actionId == ActTpCoords) {
+        int x = ReadInputInt("TpX", 0);
+        int y = ReadInputInt("TpY", 0);
+        if (mapPid.isEmpty()) {
+            SendCommand("tp " + pid + " " + x + " " + y);
+        }
+        else {
+            SendCommand("tp " + pid + " " + mapPid + " " + x + " " + y);
+        }
+
+        return;
+    }
+
+    if (mapPid.isEmpty()) {
+        SendCommand("tp " + pid);
+    }
+    else {
+        SendCommand("tp " + pid + " " + mapPid);
+    }
+}
+
+string SelectedLocPid()
+{
+    if (SelectedLoc < 0 || SelectedLoc >= LocCount()) {
+        return "";
+    }
+
+    return string(LocPidAt(SelectedLoc));
+}
+
+string SelectedMapPid()
+{
+    if (SelectedMap < 0 || SelectedMap >= MapCount()) {
+        return "";
+    }
+
+    return string(MapPidAt(SelectedMap));
+}
+
+int ReadInputInt(string name, int fallback)
+{
+    Gui::TextInput? input = FindTextInput(name);
+    if (input == null) {
+        return fallback;
+    }
+
+    string text = input.Text.trim();
+    if (text.isEmpty()) {
+        return fallback;
+    }
+
+    return text.toInt();
+}
+
+// --- Прокрутка и динамика --------------------------------------------------------------------
+
+void ScrollList(int role, int delta)
+{
+    if (role == 1) {
+        int maxScroll = int(FilteredItems.length()) - ItemRows;
+        ItemScroll = Math::Clamp(ItemScroll + delta, 0, Math::Max(0, maxScroll));
+    }
+    else if (role == 2) {
+        int maxScroll = LocCount() - LocRows;
+        LocScroll = Math::Clamp(LocScroll + delta, 0, Math::Max(0, maxScroll));
+    }
+    else if (role == 3) {
+        int maxScroll = MapCount() - MapRows;
+        MapScroll = Math::Clamp(MapScroll + delta, 0, Math::Max(0, maxScroll));
+    }
+    else if (role == 4) {
+        SkillScroll = Math::Clamp(SkillScroll + delta, 0, Math::Max(0, SkillCount() - SkillRows));
+    }
+    else if (role == 5) {
+        TraitScroll = Math::Clamp(TraitScroll + delta, 0, Math::Max(0, TraitCount() - TraitRows));
+    }
+    else if (role == 6) {
+        PerkScroll = Math::Clamp(PerkScroll + delta, 0, Math::Max(0, PerkCount() - PerkRows));
+    }
+}
+
+// Обновляет «живые» строки (производные статы и инфо локации) каждый кадр, пока экран активен.
+void UpdateDynamic()
+{
+    Gui::Text? derived = FindText("Derived");
+    if (derived != null) {
+        derived.SetText(DerivedStatsText());
+    }
+
+    Gui::Text? tpInfo = FindText("TpInfo");
+    if (tpInfo != null && SelectedLoc >= 0 && SelectedLoc < LocCount()) {
+        hstring pid = LocPidAt(SelectedLoc);
+        string info = Game.GetText(MsgStr::LocNameKey(pid)) + "\n";
+        info += Game.GetText(MsgStr::LocInfoKey(pid));
+        tpInfo.SetText(info);
+    }
+}
+
+string DerivedStatsText()
+{
+    if (!HasChosen) {
+        return "";
+    }
+
+    string text = "";
+    text += "Макс. HP: " + Chosen.MaxLife + "   ОД: " + Chosen.ActionPoints + "   AC: " + Chosen.ArmorClass + "\n";
+    text += "Вес: " + Chosen.CarryWeight + "   Урон: " + Chosen.MeleeDamage + "   Иниц.: " + Chosen.Sequence + "\n";
+    text += "Лечение: " + Chosen.HealingRate + "   Крит: " + Chosen.CriticalChance + "%   XP: " + Chosen.Experience;
+    return text;
+}
+
+// --- Доступ к объектам экрана ----------------------------------------------------------------
+
+Gui::Screen NeedDebugScreen()
+{
+    Gui::Screen? screen = Gui::GetScreen(GuiScreen::DebugMenu);
+    if (screen == null) {
+        throw("DebugMenu screen not found");
+    }
+
+    return screen;
+}
+
+Gui::Object? FindObject(string name)
+{
+    return NeedDebugScreen().Find(name);
+}
+
+Gui::Panel? FindPanel(string name)
+{
+    return cast<Gui::Panel?>(FindObject(name));
+}
+
+Gui::Button? FindButton(string name)
+{
+    return cast<Gui::Button?>(FindObject(name));
+}
+
+Gui::Grid? FindGrid(string name)
+{
+    return cast<Gui::Grid?>(FindObject(name));
+}
+
+Gui::Text? FindText(string name)
+{
+    return cast<Gui::Text?>(FindObject(name));
+}
+
+Gui::TextInput? FindTextInput(string name)
+{
+    return cast<Gui::TextInput?>(FindObject(name));
+}
+
+string ItemName(hstring pid)
+{
+    if (!Game.CheckProtoItem(pid)) {
+        return string(pid);
+    }
+
+    return ClientMain::CleanTaggedName(Game.GetText(MsgStr::ProtoItemNameKey(pid)));
+}
+
+// Переключение консольного дебаг-меню (клавиша F7 / команда "~menu").
+void ToggleDebugMenu()
+{
+    if (Gui::IsScreenActive(GuiScreen::DebugMenu)) {
+        Gui::HideScreen(GuiScreen::DebugMenu);
+        return;
+    }
+
+    Gui::Screen? active = Gui::GetActiveScreen();
+    if (active == null || (active.Num != GuiScreen::Game && active.Num != GuiScreen::GlobalMap)) {
+        return;
+    }
+
+    EnsureDebugScreenRegistered();
+    Gui::ShowScreen(GuiScreen::DebugMenu);
+}
+
+#endif
+
+}

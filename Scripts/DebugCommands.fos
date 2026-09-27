@@ -48,25 +48,47 @@ string ExecuteCommand(Critter cr, string text)
     string cmd = args[0].lower();
 
     if (cmd == "help") {
-        return "~give <proto> [кол-во]; ~tp <loc> [map] [x y] | ~tp global | ~tp hex <x> <y>; ~set <Свойство> <значение>; ~heal; ~god";
+        return "~give <proto> [кол-во]; ~tp|~teleport <loc> [map] [x y] | global | hex <x> <y>; "
+               "~set|~setstat|~setperk <Свойство> <значение>; ~setstats <ST> <PE> <EN> <CH> <IN> <AG> <LK>; "
+               "~setskills <all|Навык> <значение>; ~addtrait|~removetrait <Трейт>; ~cleartraits; ~clearperks; ~heal; ~god [0|1]";
     }
     if (cmd == "give") {
         return CommandGive(cr, args);
     }
-    if (cmd == "tp") {
+    if (cmd == "tp" || cmd == "teleport") {
         return CommandTeleport(cr, args);
     }
-    if (cmd == "set" || cmd == "perk") {
+    if (cmd == "set" || cmd == "setstat" || cmd == "setperk" || cmd == "perk") {
         return CommandSet(cr, args);
+    }
+    if (cmd == "setstats") {
+        return CommandSetStats(cr, args);
+    }
+    if (cmd == "setskill" || cmd == "setskills") {
+        return CommandSetSkills(cr, args);
+    }
+    if (cmd == "addtrait") {
+        return CommandTrait(cr, args, true);
+    }
+    if (cmd == "removetrait") {
+        return CommandTrait(cr, args, false);
+    }
+    if (cmd == "cleartraits") {
+        return CommandClearGroup(cr, CritterPropertyGroup::Traits, "Все трейты сброшены");
+    }
+    if (cmd == "clearperks") {
+        return CommandClearGroup(cr, CritterPropertyGroup::Perks, "Все перки сброшены");
     }
     if (cmd == "heal") {
         cr.CurrentHp = cr.MaxLife;
         cr.CurrentAp = cr.ActionPoints * ::Tla::AP_DIVIDER;
         return "Полностью вылечен";
     }
-    if (cmd == "god") {
-        cr.IsInvulnerable = !cr.IsInvulnerable;
-        return cr.IsInvulnerable ? "Godmode включён" : "Godmode выключен";
+    if (cmd == "god" || cmd == "godmode") {
+        // Без аргумента — переключение, с аргументом 0/1 — явная установка (форма прототипа ~godmode 1).
+        bool enabled = args.length() >= 2 ? args[1].toInt() != 0 : !cr.IsInvulnerable;
+        cr.IsInvulnerable = enabled;
+        return enabled ? "Godmode включён" : "Godmode выключен";
     }
 
     return "Неизвестная команда: " + cmd + " (~help)";
@@ -102,12 +124,106 @@ string CommandSet(Critter cr, string[] args)
     }
 
     CritterProperty prop = CritterProperty::None;
-    if (!Game.TryParseEnum(args[1], prop)) {
+    if (!ParseCritterProperty(args[1], prop)) {
         return "Неизвестное свойство: " + args[1];
     }
 
     cr.SetAsInt(prop, args[2].toInt());
     return args[1] + " = " + cr.GetAsInt(prop);
+}
+
+// Разбор имени свойства: сначала как есть, затем с префиксами IsTrait/Perk — чтобы GUI и консоль
+// принимали короткие имена прототипа (bruiser, sniper) наравне с полными enum'ами.
+bool ParseCritterProperty(string name, CritterProperty& prop)
+{
+    if (Game.TryParseEnum(name, prop)) {
+        return true;
+    }
+
+    if (Game.TryParseEnum("IsTrait" + name, prop)) {
+        return true;
+    }
+
+    return Game.TryParseEnum("Perk" + name, prop);
+}
+
+// ~setstats <ST> <PE> <EN> <CH> <IN> <AG> <LK> — пакетная установка базовых SPECIAL по порядку
+// группы SpecialBase (свойства <Stat>Base).
+string CommandSetStats(Critter cr, string[] args)
+{
+    CritterProperty[] special = CritterPropertyGroup::SpecialBase;
+    int count = int(special.length());
+    if (args.length() < count + 1) {
+        return "~setstats требует " + count + " значений (ST PE EN CH IN AG LK)";
+    }
+
+    string result = "SPECIAL:";
+    for (int i = 0; i < count; i++) {
+        int value = args[i + 1].toInt();
+        cr.SetAsInt(special[i], value);
+        result += " " + cr.GetAsInt(special[i]);
+    }
+
+    return result;
+}
+
+// ~setskills all <значение> | ~setskills <Навык> <значение> — пакетная установка навыков группы Skills.
+string CommandSetSkills(Critter cr, string[] args)
+{
+    if (args.length() < 3) {
+        return "~setskills <all|Навык> <значение>";
+    }
+
+    int value = args[2].toInt();
+
+    if (args[1].lower() == "all") {
+        CritterProperty[] skills = CritterPropertyGroup::Skills;
+        for (int i = 0; i < skills.length(); i++) {
+            cr.SetAsInt(skills[i], value);
+        }
+
+        return "Все навыки = " + value;
+    }
+
+    CritterProperty prop = CritterProperty::None;
+    if (!ParseCritterProperty(args[1], prop)) {
+        return "Неизвестный навык: " + args[1];
+    }
+    if (CritterPropertyGroup::Skills.find(prop) == -1) {
+        return "Свойство не является навыком: " + args[1];
+    }
+
+    cr.SetAsInt(prop, value);
+    return args[1] + " = " + cr.GetAsInt(prop);
+}
+
+// ~addtrait|~removetrait <Трейт> — включение/выключение трейта (bool-свойство группы Traits).
+string CommandTrait(Critter cr, string[] args, bool add)
+{
+    if (args.length() < 2) {
+        return add ? "~addtrait <Трейт>" : "~removetrait <Трейт>";
+    }
+
+    CritterProperty prop = CritterProperty::None;
+    if (!ParseCritterProperty(args[1], prop)) {
+        return "Неизвестный трейт: " + args[1];
+    }
+    if (CritterPropertyGroup::Traits.find(prop) == -1) {
+        return "Свойство не является трейтом: " + args[1];
+    }
+
+    cr.SetAsInt(prop, add ? 1 : 0);
+    return args[1] + (add ? " добавлен" : " убран");
+}
+
+// Сброс всех целочисленных свойств группы в 0 (cleartraits/clearperks).
+string CommandClearGroup(Critter cr, CritterProperty[] group, string okText)
+{
+    for (int i = 0; i < group.length(); i++) {
+        cr.SetAsInt(group[i], 0);
+    }
+
+    return okText;
 }
 
 // ~tp global | ~tp hex <x> <y> | ~tp <loc> [map] [x y] — телепорт персонажа.

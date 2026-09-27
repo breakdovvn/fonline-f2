@@ -15,6 +15,7 @@ void OnTestingInit()
 {
     Testing::RegisterTest("debug_commands", "give_set_heal_god", GiveSetHealGod);
     Testing::RegisterTest("debug_commands", "help_unknown_invalid", HelpUnknownInvalid);
+    Testing::RegisterTest("debug_commands", "bulk_and_aliases", BulkAndAliases);
 }
 
 bool FindMovableHex(Map map, mpos& hex)
@@ -35,7 +36,7 @@ bool FindMovableHex(Map map, mpos& hex)
     return false;
 }
 
-Critter? MakeTestCritter(Testing::TestContext ctx)
+Critter ? MakeTestCritter(Testing::TestContext ctx)
 {
     Location? loc = Testing::CreateTestLocation(ctx, Content::Location::desert_12);
     if (loc == null) {
@@ -101,6 +102,53 @@ void HelpUnknownInvalid(Testing::TestContext ctx)
 
     response = DebugCommands::ExecuteCommand(cr, "set NoSuchProperty 1");
     Testing::Expect(ctx, response.find("Неизвестное свойство") == 0, "Неизвестное свойство должно вернуть ошибку: " + response);
+
+    string leaks = Testing::CleanupTest(ctx);
+    Testing::Expect(ctx, leaks.isEmpty(), "Утечки после очистки: " + leaks);
+}
+
+void BulkAndAliases(Testing::TestContext ctx)
+{
+    Critter? cr = MakeTestCritter(ctx);
+    if (cr == null) {
+        return;
+    }
+
+    string response = DebugCommands::ExecuteCommand(cr, "setstats 6 7 8 5 9 4 3");
+    CritterProperty[] special = CritterPropertyGroup::SpecialBase;
+    Testing::ExpectEq(ctx, cr.GetAsInt(special[0]), 6, "~setstats ST: " + response);
+    Testing::ExpectEq(ctx, cr.GetAsInt(special[6]), 3, "~setstats LK: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "setskills all 42");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::SkillSmallGuns), 42, "~setskills all: " + response);
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::SkillOutdoorsman), 42, "~setskills all: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "setskill SkillSneak 77");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::SkillSneak), 77, "~setskill <name>: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "setperk PerkAwareness 2");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::PerkAwareness), 2, "~setperk: " + response);
+
+    response = DebugCommands::ExecuteCommand(cr, "addtrait IsTraitBruiser");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::IsTraitBruiser), 1, "~addtrait полный enum: " + response);
+    response = DebugCommands::ExecuteCommand(cr, "addtrait FastShot");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::IsTraitFastShot), 1, "~addtrait короткое имя: " + response);
+    response = DebugCommands::ExecuteCommand(cr, "removetrait IsTraitBruiser");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::IsTraitBruiser), 0, "~removetrait: " + response);
+
+    DebugCommands::ExecuteCommand(cr, "cleartraits");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::IsTraitFastShot), 0, "~cleartraits должен сбросить трейты");
+
+    DebugCommands::ExecuteCommand(cr, "clearperks");
+    Testing::ExpectEq(ctx, cr.GetAsInt(CritterProperty::PerkAwareness), 0, "~clearperks должен сбросить перки");
+
+    DebugCommands::ExecuteCommand(cr, "godmode 1");
+    Testing::Expect(ctx, cr.IsInvulnerable, "~godmode 1 должен включить неуязвимость");
+    DebugCommands::ExecuteCommand(cr, "godmode 0");
+    Testing::Expect(ctx, !cr.IsInvulnerable, "~godmode 0 должен выключить неуязвимость");
+
+    response = DebugCommands::ExecuteCommand(cr, "addtrait NoSuchTrait");
+    Testing::Expect(ctx, response.find("Неизвестный трейт") == 0, "Несуществующий трейт: " + response);
 
     string leaks = Testing::CleanupTest(ctx);
     Testing::Expect(ctx, leaks.isEmpty(), "Утечки после очистки: " + leaks);

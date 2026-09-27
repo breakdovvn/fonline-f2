@@ -84,6 +84,10 @@ bool HandleHotkeys(KeyCode key)
         case KeyCode::F6:
             break;
         case KeyCode::F7:
+            // Дебаг-меню (выдача предметов, правка статов, телепорт). Гейт команд — серверный.
+            if (!inputFocused) {
+                DebugMenu::ToggleDebugMenu();
+            }
             break;
 
         case KeyCode::F8:

@@ -972,8 +972,8 @@ string GenericDescription(int descType, int& offsX, int& offsY)
         }
 
         bool mainUnarmed = cast<Item?>(weaponMain) == null;
-        result += (mainUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem)))
-                               : CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponMain)))) +
+        result += (mainUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem))) :
+                                 CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponMain)))) +
                   "\n";
 
         if (weaponMain.Type == ItemType::Weapon) {
@@ -1023,8 +1023,8 @@ string GenericDescription(int descType, int& offsX, int& offsY)
         }
 
         bool extUnarmed = cast<Item?>(weaponExt) == null;
-        result += (extUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem)))
-                              : CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponExt)))) +
+        result += (extUnarmed ? Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrInvNoItem))) :
+                                CleanTaggedName(Game.GetText(MsgStr::ItemNameKey(weaponExt)))) +
                   "\n";
 
         if (weaponExt.Type == ItemType::Weapon) {

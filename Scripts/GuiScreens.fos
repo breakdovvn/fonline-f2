@@ -3056,10 +3056,7 @@ namespace Game
                           TextFormat(FontType::Default, FontFlag(int(FontFlag::TruncateLine)), 0));
 
             if (::ClientMain::UnarmedAimed()) {
-                Game.DrawSprite(::ClientMain::UnarmedAimSpriteId(),
-                                fpos(AbsolutePos.x + 162, AbsolutePos.y + 41),
-                                fsize(18, 18),
-                                Color::Neutral);
+                Game.DrawSprite(::ClientMain::UnarmedAimSpriteId(), fpos(AbsolutePos.x + 162, AbsolutePos.y + 41), fsize(18, 18), Color::Neutral);
             }
         }
 

@@ -298,7 +298,11 @@ void OnConsoleMessage(string text)
     if (text[0] == "~") {
         text = text.substr(1).trim();
 
-        if (!text.isEmpty()) {
+        // "~menu"/"~debug" открывают клиентское дебаг-меню локально, на сервер не уходит.
+        if (text == "menu" || text == "debug") {
+            DebugMenu::ToggleDebugMenu();
+        }
+        else if (!text.isEmpty()) {
             CurPlayer.ServerCall.DebugRunCommand(text);
         }
     }
