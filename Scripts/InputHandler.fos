@@ -159,7 +159,7 @@ bool HandleHotkeys(KeyCode key)
                 Gui::ShowScreen(GuiScreen::Character);
             }
             else if (key == KeyCode::I && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
-                Gui::ShowScreen(GuiScreen::Inventory);
+                ChosenActions::TryOpenInventory();
             }
             else if (key == KeyCode::P && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
                 Gui::ShowScreen(GuiScreen::PipBoy);

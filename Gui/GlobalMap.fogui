@@ -1150,7 +1150,7 @@
 {
     {
         {
-            Gui::ShowScreen(GuiScreen::Inventory);
+            ::ChosenActions::TryOpenInventory();
         }
     }
 }

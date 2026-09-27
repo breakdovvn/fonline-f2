@@ -68,6 +68,31 @@ void SetAction(any[] action, bool append, bool toBeginning)
     }
 }
 
+// Открывает инвентарь. В боевом режиме за ОД; вне боя бесплатно. Если ОД не хватает — экран не открывается.
+// Всё дальнейшее взаимодействие внутри инвентаря бесплатно (RtApCostMoveItemInventory = 0).
+bool TryOpenInventory()
+{
+    if (!HasChosen) {
+        Gui::ShowScreen(GuiScreen::Inventory);
+        return true;
+    }
+
+    Critter chosen = Chosen;
+
+    if (Time::IsTimeoutActive(chosen.TimeoutBattle)) {
+        int needApValue = Settings.Movement.RtApCostOpenInventory;
+        if (chosen.ActionPoints < needApValue || chosen.CurrentAp / Tla::AP_DIVIDER < needApValue) {
+            Messaging::Info(Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Combat, "" + (MsgStr::StrCombatNeedAp))), "%d", needApValue));
+            return false;
+        }
+
+        chosen.CurrentAp -= needApValue * Tla::AP_DIVIDER;
+    }
+
+    Gui::ShowScreen(GuiScreen::Inventory);
+    return true;
+}
+
 [[Event]]
 void ChosenProcess()
 {

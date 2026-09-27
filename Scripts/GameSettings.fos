@@ -66,6 +66,7 @@ namespace GameSettings
 ///@ Setting Common int32 Movement.RtApCostDropItem
 ///@ Setting Common int32 Movement.RtApCostMoveItemContainer
 ///@ Setting Common int32 Movement.RtApCostMoveItemInventory
+///@ Setting Common int32 Movement.RtApCostOpenInventory
 ///@ Setting Common int32 Movement.RtApCostPickCritter
 ///@ Setting Common int32 Movement.RtApCostPickItem
 ///@ Setting Common int32 Movement.RtApCostReloadWeapon

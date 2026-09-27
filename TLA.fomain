@@ -213,7 +213,8 @@ Movement.RtApCostCritterRun = 0  # 1 AP == 100, maximim 255
 Movement.RtApCostCritterWalk = 0 # 1 AP == 100, maximim 255
 Movement.RtApCostDropItem = 1
 Movement.RtApCostMoveItemContainer = 0
-Movement.RtApCostMoveItemInventory = 2
+Movement.RtApCostMoveItemInventory = 0
+Movement.RtApCostOpenInventory = 4
 Movement.RtApCostPickCritter = 1
 Movement.RtApCostPickItem = 4
 Movement.RtApCostReloadWeapon = 2

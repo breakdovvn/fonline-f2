@@ -2706,7 +2706,7 @@ namespace Game
 
         void OnLMouseClick() override
         {
-            Gui::ShowScreen(GuiScreen::Inventory);
+            ::ChosenActions::TryOpenInventory();
         }
     };
 
@@ -4215,7 +4215,7 @@ namespace GlobalMap
 
         void OnLMouseClick() override
         {
-            Gui::ShowScreen(GuiScreen::Inventory);
+            ::ChosenActions::TryOpenInventory();
         }
     };
 
