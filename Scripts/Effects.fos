@@ -353,7 +353,7 @@ void DoRunFlyEffect(hstring effectPid, ident crId, ident targetId, mpos hex, mpo
 
     Item effect = CurMap.CreateLocalItem(effectPid, hex);
     effect.SetAnimDir(Game.GetDirection(hex, targetHex));
-    effect.MoveToHexVisual(targetHex, 1.0f);
+    effect.MoveToHex(targetHex, 1.0f);
     effect.StartTimeEvent(Time::Milliseconds(100), Time::Milliseconds(100), FlyEffectDeferredDestroy);
 }
 
