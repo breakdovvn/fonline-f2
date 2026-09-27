@@ -220,7 +220,7 @@
                     return;
                 }
 
-                Item? item = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+                Item? item = chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen));
                 ProtoItem? proto = ::CritterItem::GetSlotItemProto(chosen);
                 int hit = ::ClientMain::ToHit(chosen, cr, proto, item == null ? chosen.HandsItemMode : item.Mode);
                 if (hit == 0) {

@@ -82,6 +82,26 @@ bool ItemViewsDirty = false;
 ident CachedMainItemId = ZERO_IDENT;
 ident CachedSecondaryItemId = ZERO_IDENT;
 ident CachedArmorItemId = ZERO_IDENT;
+ident CachedActiveItemId = ZERO_IDENT;
+uint8 CachedActiveItemSlot = 0;
+
+// Мгновенно подменяет удерживаемое оружие активной руки: без этого экипировка/снятие
+// отображались в руках только после следующей анимации (шаг, выстрел и т.п.).
+void UpdateHeldWeapon(Critter chosen)
+{
+    Item? activeItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot(::CritterItem::ActiveSlot(chosen)));
+    if (activeItem == null) {
+        chosen.Animate(CritterStateAnim::None, CritterActionAnim::HideWeapon);
+        return;
+    }
+
+    if (activeItem.Type == ItemType::Weapon) {
+        chosen.Animate(activeItem.Weapon_StateAnim, CritterActionAnim::ShowWeapon, activeItem);
+    }
+    else {
+        chosen.Animate(CritterStateAnim::None, CritterActionAnim::ShowWeapon, activeItem);
+    }
+}
 
 void CheckEquippedItemsChanged()
 {
@@ -98,11 +118,20 @@ void CheckEquippedItemsChanged()
     ident secondaryId = secondaryItem != null ? secondaryItem.Id : ZERO_IDENT;
     ident armorId = armorItem != null ? armorItem.Id : ZERO_IDENT;
 
-    if (mainId != CachedMainItemId || secondaryId != CachedSecondaryItemId || armorId != CachedArmorItemId) {
+    ident activeId = (int(chosen.ActiveItemSlot) == int(CritterItemSlot::Secondary)) ? secondaryId : mainId;
+    bool activeChanged = (activeId != CachedActiveItemId || chosen.ActiveItemSlot != CachedActiveItemSlot);
+
+    if (mainId != CachedMainItemId || secondaryId != CachedSecondaryItemId || armorId != CachedArmorItemId || chosen.ActiveItemSlot != CachedActiveItemSlot) {
         CachedMainItemId = mainId;
         CachedSecondaryItemId = secondaryId;
         CachedArmorItemId = armorId;
+        CachedActiveItemSlot = chosen.ActiveItemSlot;
+        CachedActiveItemId = activeId;
         ItemViewsDirty = true;
+
+        if (activeChanged) {
+            UpdateHeldWeapon(chosen);
+        }
     }
 }
 
@@ -137,7 +166,7 @@ string UnarmedModeText()
     }
 
     Critter chosen = Chosen;
-    if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+    if (chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen)) != null) {
         return "";
     }
 
@@ -162,7 +191,7 @@ bool UnarmedAimed()
     }
 
     Critter chosen = Chosen;
-    if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+    if (chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen)) != null) {
         return false;
     }
 
@@ -962,7 +991,7 @@ string GenericDescription(int descType, int& offsX, int& offsY)
         result += MsgStr::GetInventoryShortSpecialText(CritterProperty::Luck) + "\n";
         result += "---------------------\n";
 
-        AbstractItem weaponMain = CritterItem::GetActive(chosen);
+        AbstractItem weaponMain = CritterItem::GetActive(chosen, CritterItemSlot::Main);
         if (cast<Item?>(weaponMain) == null) {
             weaponMain = ::Parameters::BestUnarmedProto(chosen, false);
         }

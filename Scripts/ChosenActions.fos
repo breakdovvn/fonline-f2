@@ -300,8 +300,8 @@ void ChosenProcess()
         }
 
         Item? realItem = cast<Item?>(item);
-        Item? mainslotItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
-        bool isMainItem = (realItem == null || (mainslotItem != null && realItem.Id == mainslotItem.Id));
+        Item? activeSlotItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItem::ActiveSlot(chosen));
+        bool isActiveItem = (realItem == null || (activeSlotItem != null && realItem.Id == activeSlotItem.Id));
 
         // Поиск цели
         Critter? targetCr;
@@ -345,7 +345,7 @@ void ChosenProcess()
         }
 
         // Разбор способа использования
-        bool isAttack = (targetType == ClientDefines::TARGET_CRITTER && isMainItem && item.Type == ItemType::Weapon && use < WeaponHelpers::MAX_USES);
+        bool isAttack = (targetType == ClientDefines::TARGET_CRITTER && isActiveItem && item.Type == ItemType::Weapon && use < WeaponHelpers::MAX_USES);
         bool isReload = (targetType == ClientDefines::TARGET_SELF_ITEM && use == WeaponHelpers::USE_RELOAD && item.Type == ItemType::Weapon);
         bool isSelf = (targetType == ClientDefines::TARGET_SELF || targetType == ClientDefines::TARGET_SELF_ITEM);
 
@@ -423,7 +423,7 @@ void ChosenProcess()
                     return;
                 }
             }
-            if (isMainItem) {
+            if (isActiveItem) {
                 Parameters::SetWeaponMode(item, WeaponHelpers::USE_PRIMARY);
             }
 

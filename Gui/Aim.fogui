@@ -41,7 +41,7 @@
             if (cr == null) {
                 return "";
             }
-            Item? item = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+            Item? item = chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen));
             ProtoItem? proto = ::CritterItem::GetSlotItemProto(chosen);
             int mode = (item == null ? chosen.HandsItemMode : item.Mode);
             int use = ::WeaponHelpers::WeaponModeUse(mode);
@@ -58,7 +58,7 @@
                 return;
             }
             ident targetCritterId = cast<Aim>(::GuiScreensExt::NeedScreen(Screen)).TargetCritterId;
-            Item? item = Chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+            Item? item = Chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(Chosen));
             int use = (item == null ? Chosen.HandsItemMode : item.Mode) & 0xF;
             int mode = use | (loc << 4);
             ::ChosenActions::SetChosenActions(

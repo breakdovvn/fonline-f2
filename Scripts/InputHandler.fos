@@ -244,9 +244,13 @@ bool HandleHotkeys(KeyCode key)
                     Settings.GlobalMap.ShowGroups = !Settings.GlobalMap.ShowGroups;
                     break;
 
-                case KeyCode::B:
-                    // (CustomCall удалён) Game.CustomCall("ChangeSlot");
-                    break;
+                case KeyCode::B: {
+                    if (!HasChosen) {
+                        isHotkey = false;
+                        break;
+                    }
+                    ::CritterItem::ToggleActiveSlot(Chosen);
+                } break;
                 case KeyCode::M:
                     GuiScreensExt::NextCursor();
                     break;

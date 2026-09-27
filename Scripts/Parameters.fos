@@ -46,6 +46,7 @@ void InitParameters()
 
     Game.AddPropertySetter(CritterProperty::HandsProtoItemId, CritterSetHandsProtoItemId);
     Game.AddPropertySetter(CritterProperty::HandsItemMode, CritterSetHandsItemMode);
+    Game.AddPropertySetter(CritterProperty::ActiveItemSlot, CritterSetActiveItemSlot);
 
 #if SERVER
     Game.SetPropertyGetter(CritterProperty::BarterCoefficient, CritterGetBarterCoefficient);
@@ -716,8 +717,7 @@ bool IsTimedUseItem(AbstractItem item)
 #if CLIENT
 void SwitchUnarmedWeapon(Critter cr, bool next)
 {
-    hstring curPid = cr.HandsProtoItemId;
-    ProtoItem proto = Game.GetProtoItem(curPid != EMPTY_HSTRING ? curPid : Content::Item::default_weapon);
+    ProtoItem proto = BestUnarmedProto(cr, CritterItem::ActiveSlot(cr) == CritterItemSlot::Secondary);
     uint8 mode = cr.HandsItemMode;
     uint8 use = mode & 0xF;
     uint8 aim = mode >> 4;
@@ -729,17 +729,6 @@ void SwitchUnarmedWeapon(Critter cr, bool next)
     else if (!cr.IsNoAim && WeaponHelpers::WeaponAim(proto, use)) {
         cr.HandsItemMode = use | (HitLocations::LocationTorso << 4);
     }
-}
-
-// Смена руки для рукопашной: удар рукой (Main) <-> удар ногой (Secondary).
-void SwitchUnarmedHand(Critter cr)
-{
-    hstring bestPunch = BestUnarmedMove(cr, UnarmedPunchMoves);
-    hstring bestKick = BestUnarmedMove(cr, UnarmedKickMoves);
-
-    bool curIsKick = UnarmedKickMoves.find(cr.HandsProtoItemId) != -1;
-    cr.HandsProtoItemId = curIsKick ? bestPunch : bestKick;
-    cr.HandsItemMode = 0;
 }
 
 void UseMainItem()
@@ -756,7 +745,8 @@ void UseMainItem()
     }
 
     AbstractItem item = CritterItem::GetActive(chosen);
-    int mode = item.Mode;
+    CritterItemSlot activeSlot = CritterItemSlot(CritterItem::ActiveSlot(chosen));
+    int mode = (chosen.GetItem(ItemProperty::CritterSlot, activeSlot) == null) ? chosen.HandsItemMode : item.Mode;
     int use = WeaponHelpers::WeaponModeUse(mode);
     int aim = WeaponHelpers::WeaponModeAim(mode);
     Item? realItem = cast<Item?>(item);
@@ -793,11 +783,12 @@ void SwitchMainItemMode(bool next)
 
     Critter chosen = Chosen;
 
-    AbstractItem item = CritterItem::GetActive(chosen);
-    if (item.ProtoId == "default_weapon".hstr() || item.ProtoId == "") {
+    CritterItemSlot activeSlot = CritterItemSlot(CritterItem::ActiveSlot(chosen));
+    if (chosen.GetItem(ItemProperty::CritterSlot, activeSlot) == null) {
         SwitchUnarmedWeapon(chosen, next);
     }
     else {
+        AbstractItem item = CritterItem::GetActive(chosen);
         if (item.Type != ItemType::Weapon) {
             if (item.IsCanUseOnSmth && item.IsCanUse) {
                 SetWeaponMode(item, WeaponHelpers::USE_USE);
@@ -981,6 +972,15 @@ void CritterSetHandsProtoItemId(Critter cr, CritterProperty prop, hstring& newVa
 void CritterSetHandsItemMode(Critter cr, CritterProperty prop, uint8& newValue)
 {
     // Проверка режимов использования и прицеливания
+}
+
+[[PropertySetter]]
+void CritterSetActiveItemSlot(Critter cr, CritterProperty prop, uint8& newValue)
+{
+    // Допустимы только Main и Secondary; всё прочее (в т.ч. 0 из старых записей) сводим к Main.
+    if (newValue != CritterItemSlot::Secondary) {
+        newValue = CritterItemSlot::Main;
+    }
 }
 
 int ConvertGrams(int x)

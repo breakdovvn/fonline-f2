@@ -104,7 +104,7 @@
         else if (cursor == CursorType::UseItem || cursor == CursorType::UseWeapon) {
             bool isAttack = (cursor == CursorType::UseWeapon);
             Item? useItem = (!isAttack && Gui::CursorData != ZERO_IDENT ? chosen.GetItem(Gui::CursorData) :
-                                                                                chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main));
+                                                                                chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen)));
             ProtoItem? proto = ::CritterItem::GetSlotItemProto(chosen);
             if (useItem != null || (isAttack && proto != null)) {
                 Entity? entity = null;
@@ -117,7 +117,7 @@
 
                 Critter? cr = cast<Critter>(entity);
                 Item? item = cast<Item>(entity);
-                Item? realWeapon = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+                Item? realWeapon = chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen));
                 int mode = (realWeapon != null && useItem != null ? useItem.Mode : chosen.HandsItemMode);
                 if (cr != null) {
                     if (isAttack && ::WeaponHelpers::WeaponModeAim(mode) != 0) {
@@ -1041,21 +1041,11 @@
                     ::ChosenActions::SetAction( { ::Tla::ChosenMoveItem, item2.Id, item2.Count, CritterItemSlot::Main, 0, 0, 0 }, false, true );
                    */
 
-            //   Critter chosen = Chosen;
-            Item? item2 = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Secondary);
-            if (item2 != null) {
-                ::ChosenActions::SetAction({::Tla::ChosenMoveItem, item2.Id, item2.Count, CritterItemSlot::Main, 0, 0, 0}, false, true);
+            // Смена активной руки: предметы остаются в слотах, меняется только рабочая рука.
+            if (!HasChosen) {
                 return;
             }
-
-            Item? item1 = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
-            if (item1 != null) {
-                ::ChosenActions::SetAction({::Tla::ChosenMoveItem, item1.Id, item1.Count, CritterItemSlot::Secondary, 0, 0, 0}, false, true);
-            }
-            else {
-                // Обе руки пусты — рукопашная: смена руки (удар рукой <-> удар ногой).
-                ::Parameters::SwitchUnarmedHand(chosen);
-            }
+            ::CritterItem::ToggleActiveSlot(Chosen);
         }
     }
 }
@@ -2213,7 +2203,7 @@
                 return;
             }
             Critter chosen = Chosen;
-            if (chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main) != null) {
+            if (chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen)) != null) {
                 return;
             }
 
@@ -2316,7 +2306,10 @@
 {
     {
         {
-            return item.CritterSlot == CritterItemSlot::Main ? 0 : -1;
+            if (!HasChosen) {
+                return -1;
+            }
+            return int(item.CritterSlot) == ::CritterItem::ActiveSlot(Chosen) ? 0 : -1;
         }
     }
 }
@@ -2647,7 +2640,7 @@
             Item? useItem;
             @useItem = item;
             if (useItem == null) {
-                @useItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot::Main);
+                @useItem = chosen.GetItem(ItemProperty::CritterSlot, ::CritterItem::ActiveSlot(chosen));
             }
             ProtoItem? proto = ::CritterItem::GetSlotItemProto(chosen);
             int mode = (useItem == null ? chosen.HandsItemMode : useItem.Mode);

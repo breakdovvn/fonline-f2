@@ -656,6 +656,7 @@ namespace CritterProps
 ///@ Property Critter Server bool LastWeaponNotFound Mutable Persistent
 ///@ Property Critter Common hstring HandsProtoItemId Mutable OwnerSync ModifiableByClient Persistent
 ///@ Property Critter Common uint8 HandsItemMode Mutable OwnerSync ModifiableByClient Persistent
+///@ Property Critter Common uint8 ActiveItemSlot Mutable OwnerSync ModifiableByClient Persistent
 ///@ Property Critter Server uint8 LastWeaponUse Mutable Persistent
 ///@ Property Critter Common bool IsNoItemGarbager Mutable OwnerSync Persistent
 

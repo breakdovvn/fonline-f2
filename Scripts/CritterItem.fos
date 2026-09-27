@@ -1,13 +1,35 @@
 // CritterItem — общий доступ к активным предметам криттера по слоту.
-// Обязанности: GetActive (предмет или дефолтный прото оружия/брони), GetSlotItemProto (прото предмета слота с учётом HandsProtoItemId).
-// Сторона: COMMON (без #if). Связи: Game.GetProtoItem, ItemProps (CritterSlot), Content.
+// Обязанности: ActiveSlot (активная рабочая рука), GetActive/GetSlotItemProto (предмет или рукопашный прото слота).
+// Сторона: COMMON (без #if). Связи: Game.GetProtoItem, Parameters.BestUnarmedProto, ItemProps (CritterSlot), Content.
 namespace CritterItem
 {
 
-// Возвращает активный предмет в слоте, а при пустом слоте — дефолтный прото
-// (броня/оружие), чтобы у вызова всегда был валидный объект для брони и оружия.
-AbstractItem GetActive(Critter cr, int slot = CritterItemSlot::Main)
+// Активная рабочая рука: Main или Secondary. Значение 0 (старые записи без ActiveItemSlot) трактуем как Main.
+int ActiveSlot(Critter cr)
 {
+    return cr.ActiveItemSlot == CritterItemSlot::Secondary ? CritterItemSlot::Secondary : CritterItemSlot::Main;
+}
+
+// Задаёт активную руку; допустимы только Main и Secondary.
+void SetActiveSlot(Critter cr, int slot)
+{
+    cr.ActiveItemSlot = uint8(slot == int(CritterItemSlot::Secondary) ? int(CritterItemSlot::Secondary) : int(CritterItemSlot::Main));
+}
+
+// Переключает активную руку Main <-> Secondary, не трогая предметы в слотах.
+void ToggleActiveSlot(Critter cr)
+{
+    SetActiveSlot(cr, int(cr.ActiveItemSlot) == int(CritterItemSlot::Secondary) ? int(CritterItemSlot::Main) : int(CritterItemSlot::Secondary));
+}
+
+// Возвращает активный предмет в слоте; при пустом слоте руки — лучший рукопашный прото этого слота
+// (Main — удар рукой, Secondary — удар ногой), для брони — дефолтный прото брони.
+AbstractItem GetActive(Critter cr, int slot = -1)
+{
+    if (slot < 0) {
+        slot = ActiveSlot(cr);
+    }
+
     Item? item = cr.GetItem(ItemProperty::CritterSlot, slot);
     if (item == null) {
         if (slot == CritterItemSlot::Armor) {
@@ -16,8 +38,13 @@ AbstractItem GetActive(Critter cr, int slot = CritterItemSlot::Main)
         }
 
         if (slot == CritterItemSlot::Main || slot == CritterItemSlot::Secondary) {
-            ProtoItem proto = Game.GetProtoItem("default_weapon".hstr());
+#if !MAPPER
+            return Parameters::BestUnarmedProto(cr, slot == CritterItemSlot::Secondary);
+#endif
+#if MAPPER
+            ProtoItem proto = Game.GetProtoItem(Content::Item::default_weapon);
             return proto;
+#endif
         }
     }
 
@@ -25,11 +52,14 @@ AbstractItem GetActive(Critter cr, int slot = CritterItemSlot::Main)
     return item;
 }
 
-// Возвращает прото предмета в слоте; при пустом слоте — дефолтный прото.
-// Для слотов оружия учитывает HandsProtoItemId криттера (заданное оружие рук),
-// иначе откатывается к дефолтному оружию; для прочих слотов возвращает null.
-ProtoItem ? GetSlotItemProto(Critter cr, int slot = CritterItemSlot::Main)
+// Возвращает прото предмета в слоте; при пустом слоте руки — лучший рукопашный прото этого слота,
+// для брони — дефолтный прото брони, для прочих слотов — null.
+ProtoItem ? GetSlotItemProto(Critter cr, int slot = -1)
 {
+    if (slot < 0) {
+        slot = ActiveSlot(cr);
+    }
+
     Item? item = cr.GetItem(ItemProperty::CritterSlot, slot);
     if (item == null) {
         if (slot == CritterItemSlot::Armor) {
@@ -37,7 +67,12 @@ ProtoItem ? GetSlotItemProto(Critter cr, int slot = CritterItemSlot::Main)
         }
 
         if (slot == CritterItemSlot::Main || slot == CritterItemSlot::Secondary) {
-            return Game.GetProtoItem(cr.HandsProtoItemId != EMPTY_HSTRING ? cr.HandsProtoItemId : Content::Item::default_weapon);
+#if !MAPPER
+            return Parameters::BestUnarmedProto(cr, slot == CritterItemSlot::Secondary);
+#endif
+#if MAPPER
+            return Game.GetProtoItem(Content::Item::default_weapon);
+#endif
         }
 
         return null;
