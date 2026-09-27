@@ -469,7 +469,12 @@ int ToHit(Critter chosen, Critter target, ProtoItem? weapon, int weaponMode)
     ProtoItem? ammo = null;
 
     if (WeaponHelpers::WeaponRounds(resolvedWeapon, use) > 0) {
-        ammo = Game.GetProtoItem(resolvedWeapon.AmmoPid);
+        // У незаряженного оружия AmmoPid может быть пустым: GetProtoItem бросит исключение,
+        // поэтому сначала проверяем наличие прототипа и откатываемся на дефолтный патрон.
+        hstring ammoPid = resolvedWeapon.AmmoPid != EMPTY_HSTRING ? resolvedWeapon.AmmoPid : resolvedWeapon.Weapon_DefaultAmmoPid;
+        if (Game.CheckProtoItem(ammoPid)) {
+            ammo = Game.GetProtoItem(ammoPid);
+        }
     }
 
     CritterProperty skill = CritterProperty::SkillUnarmed;
