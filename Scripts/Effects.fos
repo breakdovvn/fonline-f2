@@ -353,8 +353,18 @@ void DoRunFlyEffect(hstring effectPid, ident crId, ident targetId, mpos hex, mpo
 
     Item effect = CurMap.CreateLocalItem(effectPid, hex);
     effect.SetAnimDir(Game.GetDirection(hex, targetHex));
-    effect.MoveToHex(targetHex, 1.0f);
-    effect.StartTimeEvent(Time::Milliseconds(100), Time::Milliseconds(100), FlyEffectDeferredDestroy);
+
+    // Полёт видимого снаряда: длительность растёт с дистанцией, старт отложен на замах анимации.
+    int flyDist = Game.GetDistance(hex, targetHex);
+    float flyDuration = float(flyDist) * 45.0f + 110.0f;
+    if (flyDuration < 160.0f) {
+        flyDuration = 160.0f;
+    }
+    if (flyDuration > 800.0f) {
+        flyDuration = 800.0f;
+    }
+    effect.MoveToHexTimed(targetHex, flyDuration, 120.0f);
+    effect.StartTimeEvent(Time::Milliseconds(33), Time::Milliseconds(33), FlyEffectDeferredDestroy);
 }
 
 // Отложенное удаление полётного эффекта: убираем предмет, когда он долетел (перестал двигаться).
@@ -362,7 +372,8 @@ void DoRunFlyEffect(hstring effectPid, ident crId, ident targetId, mpos hex, mpo
 void FlyEffectDeferredDestroy(Item item, TimeEventContext event)
 {
     if (!item.IsMoving()) {
-        item.Finish();
+        item.StopAnim();
+        item.FinishInstant();
         event.Stop();
     }
 }

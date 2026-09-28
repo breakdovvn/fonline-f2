@@ -269,13 +269,13 @@ git commit -m "chore: bump engine"
 заново: обновление сабмодуля затирает незакоммиченные правки в `Engine/`.
 
 ```powershell
-git -C Engine apply Tools/Baking/BakerOutputSpelling.patch
+git -C Engine apply ../Tools/Baking/BakerOutputSpelling.patch
 ```
 
 Проверить, что патч на месте (успешный код возврата 0):
 
 ```powershell
-git -C Engine apply --check --reverse Tools/Baking/BakerOutputSpelling.patch
+git -C Engine apply --check --reverse ../Tools/Baking/BakerOutputSpelling.patch
 ```
 
 Если патч перестал применяться после бампа движка — сверить состояние с

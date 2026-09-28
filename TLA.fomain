@@ -45,8 +45,8 @@ Audio.SoundVolume = 100
 Audio.MusicVolume = 100
 
 Baking.ForceBaking = False
-Baking.SingleThreadBaking = False
-Baking.IgnoreMissingBakerWarning = False
+Baking.SingleThreadBaking = True
+Baking.IgnoreMissingBakerWarning = True
 Baking.PreciseModelBounds = False
 Baking.ModelAttachmentMinExtent = 0.01
 Baking.ModelAttachmentMaxExtent = 50.0
