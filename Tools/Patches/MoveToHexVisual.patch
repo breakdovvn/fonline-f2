@@ -1,0 +1,166 @@
+diff --git a/Source/Client/ItemHexView.cpp b/Source/Client/ItemHexView.cpp
+index 819d9a2f79..62c7180211 100644
+--- a/Source/Client/ItemHexView.cpp
++++ b/Source/Client/ItemHexView.cpp
+@@ -39,6 +39,9 @@
+ 
+ FO_BEGIN_NAMESPACE
+ 
++// A stalled or hitched frame must not fling a flying item across the map or reverse it
++constexpr float32_t FlyMoveMaxFrameDeltaMs = 100.0f;
++
+ ItemHexView::ItemHexView(ptr<MapView> map, ident_t id, ptr<const ProtoItem> proto, nptr<const Properties> props) :
+     ItemView(map->GetEngine(), id, proto, props),
+     HexView(map)
+@@ -104,29 +107,35 @@ void ItemHexView::Process()
+         float32_t dt = (time - _moveUpdateLastTime).to_ms<float32_t>();
+         _moveUpdateLastTime = time;
+ 
+-        _moveCurOffset += _moveStepOffset * _moveSpeed * dt;
+-        RefreshOffs();
++        if (dt > 0.0f) {
++            _moveCurOffset += _moveStepOffset * _moveSpeed * std::min(dt, FlyMoveMaxFrameDeltaMs);
+ 
+-        float32_t dist = (_moveCurOffset - _moveStartOffset).dist();
++            float32_t dist = (_moveCurOffset - _moveStartOffset).dist();
+ 
+-        if (dist >= _moveWholeDist) {
+-            _moveCurOffset = (_moveStartOffset + _moveStepOffset) * _moveWholeDist;
+-            _isMoving = false;
+-        }
++            if (dist >= _moveWholeDist) {
++                _moveCurOffset = _moveStartOffset + _moveStepOffset * _moveWholeDist;
++                _isMoving = false;
++                _moveVisualOnly = false;
++            }
+ 
+-        int32_t proc = _moveWholeDist > 0.0f ? iround<int32_t>(dist / _moveWholeDist * 100.0f) : 100;
+-        auto step_hex = _moveSteps[_moveSteps.size() * std::min(proc, 99) / 100];
++            RefreshOffs();
+ 
+-        if (auto hex = GetHex(); hex != step_hex) {
+-            const auto [x, y] = GeometryHelper::GetHexOffset(hex, step_hex);
++            if (_isMoving && !_moveVisualOnly) {
++                int32_t proc = _moveWholeDist > 0.0f ? iround<int32_t>(dist / _moveWholeDist * 100.0f) : 100;
++                auto step_hex = _moveSteps[_moveSteps.size() * std::min(proc, 99) / 100];
+ 
+-            _moveStartOffset.x -= numeric_cast<float32_t>(x);
+-            _moveStartOffset.y -= numeric_cast<float32_t>(y);
+-            _moveCurOffset.x -= numeric_cast<float32_t>(x);
+-            _moveCurOffset.y -= numeric_cast<float32_t>(y);
+-            RefreshOffs();
++                if (auto hex = GetHex(); hex != step_hex) {
++                    const auto [x, y] = GeometryHelper::GetHexOffset(hex, step_hex);
+ 
+-            _map->MoveItem(this, step_hex);
++                    _moveStartOffset.x -= numeric_cast<float32_t>(x);
++                    _moveStartOffset.y -= numeric_cast<float32_t>(y);
++                    _moveCurOffset.x -= numeric_cast<float32_t>(x);
++                    _moveCurOffset.y -= numeric_cast<float32_t>(y);
++                    RefreshOffs();
++
++                    _map->MoveItem(this, step_hex);
++                }
++            }
+         }
+     }
+ }
+@@ -139,10 +148,12 @@ void ItemHexView::MoveToHex(mpos hex, float32_t speed)
+ 
+     if (cur_hex == hex) {
+         _isMoving = false;
++        _moveVisualOnly = false;
+         return;
+     }
+ 
+     _isMoving = true;
++    _moveVisualOnly = false;
+     _moveSpeed = speed;
+ 
+     _moveSteps.clear();
+@@ -161,6 +172,46 @@ void ItemHexView::MoveToHex(mpos hex, float32_t speed)
+     _moveUpdateLastTime = _engine->GameTime.GetFrameTime();
+ }
+ 
++void ItemHexView::MoveToHexVisual(mpos hex, float32_t speed)
++{
++    FO_STACK_TRACE_ENTRY();
++
++    auto cur_hex = GetHex();
++
++    if (cur_hex == hex) {
++        _isMoving = false;
++        _moveVisualOnly = false;
++        return;
++    }
++
++    ipos32 pos_offset = GeometryHelper::GetHexOffset(cur_hex, hex);
++    pos_offset.y += _engine->Random(5, 25); // Center of body
++
++    float32_t whole_dist = fpos32(pos_offset).dist();
++
++    if (whole_dist <= 0.0f) {
++        _isMoving = false;
++        _moveVisualOnly = false;
++        return;
++    }
++
++    _isMoving = true;
++    _moveVisualOnly = true;
++    _moveSpeed = speed;
++
++    _moveSteps.clear();
++
++    // A pure visual trajectory keeps the item on its spawn hex and slides the sprite along a
++    // straight line, so no per-hex field/sprite churn can wobble or stall the flight
++    _moveStepOffset = fpos32(pos_offset) / whole_dist;
++    _moveWholeDist = whole_dist;
++
++    _moveStartOffset = fpos32(_sprOffset);
++    _moveCurOffset = _moveStartOffset;
++    _moveDir = mdir(iround<int32_t>(GeometryHelper::GetDirAngle(cur_hex, hex)));
++    _moveUpdateLastTime = _engine->GameTime.GetFrameTime();
++}
++
+ void ItemHexView::RefreshAlpha()
+ {
+     FO_STACK_TRACE_ENTRY();
+diff --git a/Source/Client/ItemHexView.h b/Source/Client/ItemHexView.h
+index 89745eb546..17298a0e16 100644
+--- a/Source/Client/ItemHexView.h
++++ b/Source/Client/ItemHexView.h
+@@ -69,6 +69,7 @@ class ItemHexView final : public ItemView, public HexView
+     void SetAnimDir(mdir dir);
+     void RefreshAnim();
+     void MoveToHex(mpos hex, float32_t speed);
++    void MoveToHexVisual(mpos hex, float32_t speed);
+     void RefreshOffs();
+     void SetMultihexEntries(vector<mpos> entries);
+ 
+@@ -84,6 +85,7 @@ class ItemHexView final : public ItemView, public HexView
+     mdir _animDir {};
+ 
+     bool _isMoving {};
++    bool _moveVisualOnly {};
+     float32_t _moveSpeed {};
+     fpos32 _moveStepOffset {};
+     fpos32 _moveStartOffset {};
+diff --git a/Source/Scripting/ClientItemScriptMethods.cpp b/Source/Scripting/ClientItemScriptMethods.cpp
+index 343168b4a7..c9cf3f97c9 100644
+--- a/Source/Scripting/ClientItemScriptMethods.cpp
++++ b/Source/Scripting/ClientItemScriptMethods.cpp
+@@ -190,6 +190,14 @@ FO_SCRIPT_API void Client_Item_MoveToHex(ptr<ItemView> self, mpos hex, float32_t
+     }
+ }
+ 
++///@ ExportMethod
++FO_SCRIPT_API void Client_Item_MoveToHexVisual(ptr<ItemView> self, mpos hex, float32_t speed)
++{
++    if (auto hex_item = self.dyn_cast<ItemHexView>()) {
++        hex_item->MoveToHexVisual(hex, speed);
++    }
++}
++
+ ///@ ExportMethod
+ FO_SCRIPT_API vector<ptr<ItemView>> Client_Item_GetInnerItems(ptr<ItemView> self)
+ {

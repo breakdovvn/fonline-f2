@@ -269,13 +269,13 @@ git commit -m "chore: bump engine"
 заново: обновление сабмодуля затирает незакоммиченные правки в `Engine/`.
 
 ```powershell
-git -C Engine apply Tools/Baking/BakerOutputSpelling.patch
+git -C Engine apply ../Tools/Baking/BakerOutputSpelling.patch
 ```
 
 Проверить, что патч на месте (успешный код возврата 0):
 
 ```powershell
-git -C Engine apply --check --reverse Tools/Baking/BakerOutputSpelling.patch
+git -C Engine apply --check --reverse ../Tools/Baking/BakerOutputSpelling.patch
 ```
 
 Если патч перестал применяться после бампа движка — сверить состояние с
@@ -286,6 +286,37 @@ git -C Engine apply --check --reverse Tools/Baking/BakerOutputSpelling.patch
 нужен коммит **внутри** `Engine` на ветке своего форка движка и push в доступный
 remote, после чего в корне `git add Engine` запишет новый SHA. Пока этого нет,
 патч хранится файлом в основном репозитории и применяется вручную.
+
+### 8.2 Локальная правка движка (патч визуального полёта `MoveToHexVisual`)
+
+Второй локальный патч — `Tools/Patches/MoveToHexVisual.patch`. Он добавляет в
+клиентский движок отдельный режим «только визуального» перемещения предмета и
+используется скриптом полётного эффекта (`Scripts/Effects.fos`, `DoRunFlyEffect`).
+Без него скриптовый вызов `effect.MoveToHexVisual(...)` не компилируется
+(`No matching symbol`).
+
+Что меняет патч (файлы `Engine/Source/...`):
+
+- `Client/ItemHexView.h` / `ItemHexView.cpp` — новое состояние `_moveVisualOnly` и
+  метод `MoveToHexVisual(hex, speed)`: предмет остаётся на своём гексе, а спрайт
+  скользит по прямой к цели, без пошагового `Map::MoveItem` (иначе летящий эффект
+  дрожит/застревает на переходах). Заодно чинятся ошибки `MoveToHex`/`Process`:
+  ограничение `dt` кадром 100 мс (рывок после фриза), корректная конечная точка
+  `_moveStartOffset + _moveStepOffset * _moveWholeDist` вместо умножения всей суммы
+  и обработка только когда предмет реально движется.
+- `Scripting/ClientItemScriptMethods.cpp` — экспорт `Item.MoveToHexVisual` в скрипты.
+
+Применение и проверка (как в 8.1):
+
+```powershell
+git -C Engine apply ../Tools/Patches/MoveToHexVisual.patch
+git -C Engine apply --check --reverse ../Tools/Patches/MoveToHexVisual.patch
+```
+
+Проверка, что состояние согласовано: `Scripts/Effects.fos` должен вызывать
+`effect.MoveToHexVisual(targetHex, 1.0f);`. Если после бампа движка патч не
+применяется — движок уже содержит эту правку, либо `ItemHexView` изменился и
+патч нужно перегенерировать из рабочего дерева `Engine/`.
 
 ---
 
