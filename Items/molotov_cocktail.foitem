@@ -21,6 +21,7 @@ Weapon_DmgMin_0 = 8
 Weapon_DmgMax_0 = 20
 Weapon_Remove_0 = True
 Weapon_Effect_0 = generic_4030
+Weapon_ProjSpeed_0 = 15
 Weapon_CriticalFailture = 4
 Cost = 50
 SoundId = 48

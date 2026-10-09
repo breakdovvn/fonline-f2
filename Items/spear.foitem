@@ -30,6 +30,7 @@ Weapon_DmgMax_0 = 10
 Weapon_DmgMax_1 = 10
 Weapon_Remove_1 = True
 Weapon_Effect_1 = flying_spear
+Weapon_ProjSpeed_1 = 16
 Weapon_CriticalFailture = 1
 Cost = 80
 SoundId = 48

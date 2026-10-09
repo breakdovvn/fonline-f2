@@ -30,6 +30,7 @@ Weapon_DmgMax_0 = 6
 Weapon_DmgMax_1 = 6
 Weapon_Remove_0 = True
 Weapon_Effect_0 = generic_4026
+Weapon_ProjSpeed_0 = 15
 Weapon_CriticalFailture = 1
 SoundId = 48
 Material = 1

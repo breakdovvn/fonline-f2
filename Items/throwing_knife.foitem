@@ -30,6 +30,7 @@ Weapon_DmgMax_0 = 6
 Weapon_DmgMax_1 = 6
 Weapon_Remove_0 = True
 Weapon_Effect_0 = flying_knife
+Weapon_ProjSpeed_0 = 20
 Weapon_CriticalFailture = 1
 Cost = 100
 SoundId = 52

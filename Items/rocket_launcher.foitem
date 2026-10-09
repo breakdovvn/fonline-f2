@@ -26,6 +26,7 @@ Weapon_ActionAnim_0 = Single
 Weapon_DmgMin_0 = 35
 Weapon_DmgMax_0 = 100
 Weapon_Effect_0 = flying_rocket
+Weapon_ProjSpeed_0 = 14
 Weapon_CriticalFailture = 5
 Deteriorable = True
 Cost = 2300
