@@ -214,6 +214,157 @@ int ProjectileFlightTime(Critter cr, mpos targetHex, AbstractItem weapon, int us
     return Math::Clamp(ms, 120, 2000);
 }
 
+// Отложенное применение урона/взрыва до прилёта снаряда. Движок запрещает mutable-глобалы, поэтому
+// параметры действия пакуются в any[] и передаются в [[TimeEvent]], а ручки сущностей переискиваются по id.
+any[] BuildCombatPayload(AttackStruct attack, Critter? target, int rounds, bool isCritical, bool intentionally, int kind, Map? map, mpos hex,
+                         hstring weapPid, hstring ammoPid, ident intentionallyId, bool isRocket)
+{
+    ident attackerId = ZERO_IDENT;
+    Critter? atk = attack.Attacker;
+    if (atk != null) {
+        attackerId = atk.Id;
+    }
+
+    ident weaponId = ZERO_IDENT;
+    Item? wpn = attack.RealWeapon;
+    if (wpn != null) {
+        weaponId = wpn.Id;
+    }
+
+    ident targetId = ZERO_IDENT;
+    if (target != null) {
+        targetId = target.Id;
+    }
+
+    ident mapId = ZERO_IDENT;
+    if (map != null) {
+        mapId = map.Id;
+    }
+
+    any[] v = {
+        kind,
+        attackerId,
+        weaponId,
+        targetId,
+        rounds,
+        isCritical ? 1 : 0,
+        intentionally ? 1 : 0,
+        mapId,
+        hex.x,
+        hex.y,
+        weapPid,
+        ammoPid,
+        intentionallyId,
+        isRocket ? 1 : 0,
+        attack.Hx,
+        attack.Hy,
+        attack.Aim,
+        attack.IsBurst ? 1 : 0,
+        attack.BloodyMess ? 1 : 0,
+        attack.CombatMessage ? 1 : 0,
+        attack.scoreUnarmed ? 1 : 0,
+        int(attack.WeaponPerk),
+        attack.WeaponSubtype,
+        attack.DmgMin,
+        attack.DmgMax,
+        int(attack.DmgType),
+        attack.BonusDmg,
+        attack.DmgMul,
+        attack.DRMod,
+        attack.DMMod,
+        attack.DDMod,
+        attack.TargetId,
+        attack.TargetHit ? 1 : 0,
+        attack.ForceFlags,
+        attack.ShowHitAnimForce ? 1 : 0
+    };
+    return v;
+}
+
+// Прилёт снаряда: восстанавливаем AttackStruct и ручки по id и применяем отложенный урон/взрыв.
+[[TimeEvent]]
+void DeferredCombatApply(any[] v)
+{
+    if (v.length() < 35) {
+        return;
+    }
+
+    int kind = int(v[0]);
+    ident attackerId = ident(v[1]);
+    ident weaponId = ident(v[2]);
+    ident targetId = ident(v[3]);
+    int rounds = int(v[4]);
+    bool isCritical = int(v[5]) != 0;
+    bool intentionally = int(v[6]) != 0;
+
+    AttackStruct a = AttackStruct();
+
+    if (attackerId != ZERO_IDENT) {
+        a.Attacker = Game.GetCritter(attackerId);
+    }
+
+    if (weaponId != ZERO_IDENT) {
+        a.RealWeapon = Game.GetItem(weaponId);
+    }
+
+    a.Hx = int(v[14]);
+    a.Hy = int(v[15]);
+    a.Aim = int(v[16]);
+    a.IsBurst = int(v[17]) != 0;
+    a.BloodyMess = int(v[18]) != 0;
+    a.CombatMessage = int(v[19]) != 0;
+    a.scoreUnarmed = int(v[20]) != 0;
+    a.WeaponPerk = ItemPerks(int(v[21]));
+    a.WeaponSubtype = int(v[22]);
+    a.DmgMin = int(v[23]);
+    a.DmgMax = int(v[24]);
+    a.DmgType = DamageTypes(int(v[25]));
+    a.BonusDmg = int(v[26]);
+    a.DmgMul = int(v[27]);
+    a.DRMod = int(v[28]);
+    a.DMMod = int(v[29]);
+    a.DDMod = int(v[30]);
+    a.TargetId = ident(v[31]);
+    a.TargetHit = int(v[32]) != 0;
+    a.ForceFlags = int(v[33]);
+    a.ShowHitAnimForce = int(v[34]) != 0;
+
+    CombatRes[] res = {};
+
+    if (kind == 0) {
+        if (targetId == ZERO_IDENT) {
+            return;
+        }
+
+        Critter? target = Game.GetCritter(targetId);
+        if (target == null) {
+            return;
+        }
+
+        ApplyDamage(a, target, rounds, isCritical, intentionally, res, 0);
+    }
+    else {
+        ident mapId = ident(v[7]);
+        if (mapId == ZERO_IDENT) {
+            return;
+        }
+
+        Map? map = Game.GetMap(mapId);
+        if (map == null) {
+            return;
+        }
+
+        Critter? target = null;
+        if (targetId != ZERO_IDENT) {
+            target = Game.GetCritter(targetId);
+        }
+
+        CommenceExplosion(a, map, mpos(int(v[8]), int(v[9])), target, hstring(v[10]), hstring(v[11]), isCritical, ident(v[12]), int(v[13]) != 0, res, 0);
+    }
+
+    FlushResults(res, 0);
+}
+
 void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMode, ProtoItem? ammo)
 {
     if (!cr.IsAlive()) {
@@ -578,11 +729,11 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                 attack.DmgMul *= 2;
             }
 
-            ApplyDamage(attack, realTarget, 1, criticalHit, true, results);
+            ApplyDamage(attack, realTarget, 1, criticalHit, true, results, ProjectileFlightTime(cr, realTarget.Hex, weapon, use, isGrenade));
         }
         else {
             if (changedTarget) {
-                ApplyDamage(attack, realTarget, 1, false, false, results);
+                ApplyDamage(attack, realTarget, 1, false, false, results, ProjectileFlightTime(cr, realTarget.Hex, weapon, use, isGrenade));
             }
             else {
                 NotifyMiss(cr, results);
@@ -592,7 +743,7 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
     else if ((weaponSubtype == WS_GUN) && !isBurst && !isRocket && !isFlamethrower) // одиночный выстрел, обычный
     {
         if (isHit || changedTarget) {
-            ApplyDamage(attack, realTarget, 1, criticalHit, !changedTarget, results);
+            ApplyDamage(attack, realTarget, 1, criticalHit, !changedTarget, results, ProjectileFlightTime(cr, realTarget.Hex, weapon, use, isGrenade));
         }
         else // обычный промах здесь
         {
@@ -655,7 +806,7 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                     NotifyOops(cr, target, critsLine[i], results);
                     normalTarget = critsLine[i];
                     useNormal = true;
-                    ApplyDamage(attack, normalTarget, 1, false, false, results);
+                    ApplyDamage(attack, normalTarget, 1, false, false, results, ProjectileFlightTime(cr, normalTarget.Hex, weapon, use, isGrenade));
                     anyHit = true;
                 }
             }
@@ -957,7 +1108,8 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                         1,
                         (realTarget.Id == critsHit[i].Id) && criticalHit,
                         (cr.ControlledByPlayer && !changedTarget) || (!cr.ControlledByPlayer && critsHit[i].Id == target.Id),
-                        results);
+                        results,
+                        ProjectileFlightTime(cr, critsHit[i].Hex, weapon, use, isGrenade));
         }
 
         if (!changedTarget && !attack.TargetHit) {
@@ -1408,7 +1560,8 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                         critsHitBullets[i],
                         (realTarget.Id == critsHit[i].Id) && criticalHit,
                         (cr.ControlledByPlayer && !changedTarget) || (!cr.ControlledByPlayer && critsHit[i].Id == target.Id),
-                        results);
+                        results,
+                        ProjectileFlightTime(cr, critsHit[i].Hex, weapon, use, isGrenade));
         }
 
         if (!changedTarget && !attack.TargetHit) {
@@ -1421,10 +1574,10 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
 
         if (isHit || changedTarget) {
             if (exploding) {
-                CommenceExplosion(attack, map, targetHex, realTarget, weapPid, ammoPid, criticalHit, realTarget.Id, isRocket, results);
+                CommenceExplosion(attack, map, targetHex, realTarget, weapPid, ammoPid, criticalHit, realTarget.Id, isRocket, results, ProjectileFlightTime(cr, targetHex, weapon, use, isGrenade));
             }
             else {
-                ApplyDamage(attack, realTarget, 1, criticalHit, !changedTarget, results);
+                ApplyDamage(attack, realTarget, 1, criticalHit, !changedTarget, results, ProjectileFlightTime(cr, realTarget.Hex, weapon, use, isGrenade));
             }
         }
         else {
@@ -1505,10 +1658,10 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                 useNormal = true;
 
                 if (exploding) {
-                    CommenceExplosion(attack, map, targetHex, normalTarget, weapPid, ammoPid, false, realTarget.Id, isRocket, results);
+                    CommenceExplosion(attack, map, targetHex, normalTarget, weapPid, ammoPid, false, realTarget.Id, isRocket, results, ProjectileFlightTime(cr, targetHex, weapon, use, isGrenade));
                 }
                 else {
-                    ApplyDamage(attack, normalTarget, 1, false, false, results);
+                    ApplyDamage(attack, normalTarget, 1, false, false, results, ProjectileFlightTime(cr, normalTarget.Hex, weapon, use, isGrenade));
                 }
             }
             else {
@@ -1533,7 +1686,7 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
                 }
 
                 if (exploding) {
-                    CommenceExplosion(attack, map, targetHex, null, weapPid, ammoPid, false, realTarget.Id, isRocket, results);
+                    CommenceExplosion(attack, map, targetHex, null, weapPid, ammoPid, false, realTarget.Id, isRocket, results, ProjectileFlightTime(cr, targetHex, weapon, use, isGrenade));
                 }
             }
         } // промах
@@ -1617,8 +1770,18 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
     return;
 }
 
-void ApplyDamage(AttackStruct attack, Critter target, int rounds, bool isCritical, bool intentionally, CombatRes[] results)
+void ApplyDamage(AttackStruct attack, Critter target, int rounds, bool isCritical, bool intentionally, CombatRes[] results, int delayMs = 0)
 {
+    if (delayMs > 0) {
+        if (target.Id == attack.TargetId) {
+            attack.TargetHit = true;
+        }
+
+        any[] payload = BuildCombatPayload(attack, target, rounds, isCritical, intentionally, 0, null, mpos(0, 0), EMPTY_HSTRING, EMPTY_HSTRING, ZERO_IDENT, false);
+        Game.StartTimeEvent(Time::Milliseconds(delayMs), DeferredCombatApply, payload);
+        return;
+    }
+
     int dmgMul = attack.DmgMul;
     int bt = target.BodyType;
     int eff = 0;
@@ -2346,8 +2509,14 @@ void ApplyDamage(AttackStruct attack, Critter target, int rounds, bool isCritica
 }
 
 void CommenceExplosion(AttackStruct attack, Map map, mpos targetHex, Critter? target, hstring weapPid, hstring ammoPid, bool isCritical, ident intentionallyId,
-                       bool isRocket, CombatRes[] results)
+                       bool isRocket, CombatRes[] results, int delayMs = 0)
 {
+    if (delayMs > 0) {
+        any[] payload = BuildCombatPayload(attack, target, 1, isCritical, false, 1, map, targetHex, weapPid, ammoPid, intentionallyId, isRocket);
+        Game.StartTimeEvent(Time::Milliseconds(delayMs), DeferredCombatApply, payload);
+        return;
+    }
+
     if (ammoPid == Content::Item::emp_rocket) {
         weapPid = ammoPid;
         attack.DmgType = DamageTypes::Emp;
