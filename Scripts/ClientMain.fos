@@ -10,7 +10,7 @@ const int STR_AND = 108;
 #if CLIENT
 
 ///@ Property Critter Client bool SexTagFemale Mutable
-///@ RemoteCall Client CombatResult(any[] data)
+///@ RemoteCall Client CombatResult(any[] data, int32 flightTimeMs)
 
 [[ModuleInit]]
 void InitClientMain()
@@ -639,8 +639,12 @@ void HitAim(int& aim)
 
 // Результаты боя.
 [[ClientRemoteCall]] [[Async]]
-void CombatResult(any[] data)
+void CombatResult(any[] data, int flightTimeMs)
 {
+    if (flightTimeMs > 0) {
+        Yield(flightTimeMs);
+    }
+
     int datalen = data.length();
     if (datalen == 0) {
         return;

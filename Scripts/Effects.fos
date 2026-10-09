@@ -8,7 +8,7 @@ namespace Effects
 ///@ RemoteCall Client DoFadeScreen(ucolor fromColor, ucolor toColor, timespan time)
 ///@ RemoteCall Client DoQuakeScreen(int32 noise, timespan time)
 ///@ RemoteCall Client DoRunEffect(hstring effectPid, mpos hex, int32 radius)
-///@ RemoteCall Client DoRunFlyEffect(hstring effectPid, ident crId, ident targetId, mpos hex, mpos targetHex)
+///@ RemoteCall Client DoRunFlyEffect(hstring effectPid, mpos hex, mpos targetHex, int32 flightTimeMs)
 ///@ RemoteCall Client DoPlaySound(hstring soundName)
 ///@ RemoteCall Client DoAnimate(ident crId, CritterStateAnim state, CritterActionAnim action)
 
@@ -90,32 +90,32 @@ void RunEffect(Map map, hstring effectPid, mpos hex, int radius = 0)
 }
 
 // Полётный эффект от криттера к криттеру (например выстрел): видят те, кто видит путь.
-void RunFlyEffect(Map map, hstring effectPid, Critter cr, Critter target)
+void RunFlyEffect(Map map, hstring effectPid, Critter cr, Critter target, int flightTimeMs = 0)
 {
     Critter[] critters = map.GetCrittersWhoSeePath(cr.Hex, target.Hex, CritterFindType::Players);
 
     for (int i = 0; i < critters.length(); i++) {
-        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, cr.Id, target.Id, cr.Hex, target.Hex);
+        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, cr.Hex, target.Hex, flightTimeMs);
     }
 }
 
 // Полётный эффект от криттера в указанный гекс (цель-криттера нет).
-void RunFlyEffect(Map map, hstring effectPid, Critter cr, mpos targetHex)
+void RunFlyEffect(Map map, hstring effectPid, Critter cr, mpos targetHex, int flightTimeMs = 0)
 {
     Critter[] critters = map.GetCrittersWhoSeePath(cr.Hex, targetHex, CritterFindType::Players);
 
     for (int i = 0; i < critters.length(); i++) {
-        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, cr.Id, ZERO_IDENT, cr.Hex, targetHex);
+        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, cr.Hex, targetHex, flightTimeMs);
     }
 }
 
 // Полётный эффект между двумя гексами (без привязки к криттерам).
-void RunFlyEffect(Map map, hstring effectPid, mpos hex, mpos targetHex)
+void RunFlyEffect(Map map, hstring effectPid, mpos hex, mpos targetHex, int flightTimeMs = 0)
 {
     Critter[] critters = map.GetCrittersWhoSeePath(hex, targetHex, CritterFindType::Players);
 
     for (int i = 0; i < critters.length(); i++) {
-        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, ZERO_IDENT, ZERO_IDENT, hex, targetHex);
+        critters[i].PlayerClientCall.DoRunFlyEffect(effectPid, hex, targetHex, flightTimeMs);
     }
 }
 
@@ -336,24 +336,22 @@ void EffectDeferredDestroy(Item item, TimeEventContext event)
     }
 }
 
-// Серверный вызов полётного эффекта: если криттеры ещё видимы — берём их актуальные гексы,
-// иначе используем присланные. Эффект летит из hex в targetHex и удаляется по прибытии.
+// Координаты полёта фиксируются сервером в момент атаки, чтобы визуальная цель совпадала с расчётом попадания.
 [[ClientRemoteCall]]
-void DoRunFlyEffect(hstring effectPid, ident crId, ident targetId, mpos hex, mpos targetHex)
+void DoRunFlyEffect(hstring effectPid, mpos hex, mpos targetHex, int flightTimeMs)
 {
     if (!HasCurMap) {
         return;
     }
 
-    Critter? cr = Game.GetCritter(crId);
-    Critter? target = Game.GetCritter(targetId);
-
-    hex = cr != null ? cr.Hex : hex;
-    targetHex = target != null ? target.Hex : targetHex;
-
     Item effect = CurMap.CreateLocalItem(effectPid, hex);
     effect.SetAnimDir(Game.GetDirection(hex, targetHex));
-    effect.MoveToHexVisual(targetHex, 1.0f);
+    if (flightTimeMs > 0) {
+        effect.MoveToHexVisualForDuration(targetHex, flightTimeMs);
+    }
+    else {
+        effect.MoveToHexVisual(targetHex, 1.0f);
+    }
     effect.StartTimeEvent(Time::Milliseconds(100), Time::Milliseconds(100), FlyEffectDeferredDestroy);
 }
 

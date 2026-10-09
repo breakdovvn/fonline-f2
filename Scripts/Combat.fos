@@ -13,9 +13,9 @@ const int WS_THROWING = 3;
 const int WS_GUN = 4;
 const int PTR_NULL = -1;
 
-void FlushResults(CombatRes[] tree)
+void FlushResults(CombatRes[] tree, int delayMs = 0)
 {
-    runTree(tree, 0);
+    runTree(tree, 0, delayMs);
 }
 
 class CombatRes
@@ -84,7 +84,7 @@ void AddEff(Critter crit, any[] eff, CombatRes[] combatResults)
     combatResults[ptr].Res[0] = int(combatResults[ptr].Res[0]) + len;
 }
 
-void runTree(CombatRes[] combatResults, int ptr)
+void runTree(CombatRes[] combatResults, int ptr, int delayMs)
 {
     if (ptr == 0) {
         if (combatResults.length() == 0) {
@@ -98,18 +98,26 @@ void runTree(CombatRes[] combatResults, int ptr)
        return false;
        }*/
 
-    combatResults[ptr].Crit.PlayerClientCall.CombatResult(combatResults[ptr].Res);
+    combatResults[ptr].Crit.PlayerClientCall.CombatResult(combatResults[ptr].Res, delayMs);
 
     /*if (combatResults[ptr].Left  != PTR_NULL)
        if (!runTree(combatResults, combatResults[ptr].Left, where)) return false;
        if (combatResults[ptr].Right != PTR_NULL)
        if (!runTree(combatResults, combatResults[ptr].Right, where)) return false;*/
     if (combatResults[ptr].Left != PTR_NULL) {
-        runTree(combatResults, combatResults[ptr].Left);
+        runTree(combatResults, combatResults[ptr].Left, delayMs);
     }
 
     if (combatResults[ptr].Right != PTR_NULL) {
-        runTree(combatResults, combatResults[ptr].Right);
+        runTree(combatResults, combatResults[ptr].Right, delayMs);
+    }
+}
+
+[[TimeEvent]]
+void DelayedDodge(Critter target)
+{
+    if (target.IsAlive()) {
+        target.Action(CritterAction::Dodge, 0, null);
     }
 }
 
@@ -171,6 +179,40 @@ class AttackStruct
         ShowHitAnimForce = false;
     }
 };
+
+// Время полёта снаряда до цели в миллисекундах (0 — снаряда нет). Скорость берётся из
+// Weapon_ProjSpeed_<use> (гексы/сек), иначе — из значений по умолчанию для типа оружия.
+int ProjectileFlightTime(Critter cr, mpos targetHex, AbstractItem weapon, int use, bool isGrenade)
+{
+    if (WeaponHelpers::WeaponEffect(weapon, use) == EMPTY_HSTRING) {
+        return 0;
+    }
+
+    int dist = Game.GetDistance(cr.Hex, targetHex);
+    if (dist <= 0) {
+        return 0;
+    }
+
+    int speed = WeaponHelpers::WeaponProjSpeed(weapon, use);
+    if (speed <= 0) {
+        CritterProperty skill = WeaponHelpers::WeaponSkill(weapon, use);
+        if (isGrenade) {
+            speed = 6;
+        }
+        else if (skill == CritterProperty::SkillThrowing) {
+            speed = 12;
+        }
+        else if (skill == CritterProperty::SkillEnergyWeapons) {
+            speed = 80;
+        }
+        else {
+            speed = 60;
+        }
+    }
+
+    int ms = (dist * 1000) / speed;
+    return Math::Clamp(ms, 120, 2000);
+}
 
 void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMode, ProtoItem? ammo)
 {
@@ -1502,20 +1544,24 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
 
     // боевые сообщения
 
-    FlushResults(results);
-
     // всякое вроде анимаций, эффектов
 
     // Выстрел
+    int flightTimeMs = 0;
     if (WeaponHelpers::WeaponEffect(weapon, use) != EMPTY_HSTRING) {
+        mpos projectileTargetHex = useHex ? targetHex : (useNormal ? normalTarget.Hex : realTarget.Hex);
+        flightTimeMs = isRanged ? ProjectileFlightTime(cr, projectileTargetHex, weapon, use, isGrenade) : 0;
+
         if (useHex) {
             Effects::RunFlyEffect(map, WeaponHelpers::WeaponEffect(weapon, use), cr,
-                                  targetHex); // да, цель может быть null (см.: гранаты, ракетомёт)
+                                  targetHex, flightTimeMs); // да, цель может быть null (см.: гранаты, ракетомёт)
         }
         else {
-            Effects::RunFlyEffect(map, WeaponHelpers::WeaponEffect(weapon, use), cr, (useNormal ? normalTarget : realTarget));
+            Effects::RunFlyEffect(map, WeaponHelpers::WeaponEffect(weapon, use), cr, (useNormal ? normalTarget : realTarget), flightTimeMs);
         }
     }
+
+    FlushResults(results, flightTimeMs);
 
     if (ammoRound > 0 && realWeapon != null && !cr.IsUnlimitedAmmo) {
         if (realWeapon.AmmoCount <= ammoRound) {
@@ -1560,7 +1606,12 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
             AiSettings::TrySayCombatText(target, CombatText::Miss);
         }
 
-        target.Action(CritterAction::Dodge, 0, null); // Todo: тип спереди/сзади
+        if (flightTimeMs > 0) {
+            target.StartTimeEvent(Time::Milliseconds(flightTimeMs), DelayedDodge);
+        }
+        else {
+            target.Action(CritterAction::Dodge, 0, null); // Todo: тип спереди/сзади
+        }
     }
 
     return;

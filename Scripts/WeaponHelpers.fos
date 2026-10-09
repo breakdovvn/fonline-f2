@@ -74,6 +74,12 @@ hstring WeaponEffect(AbstractItem item, int use)
     return (use) == 0 ? item.Weapon_Effect_0 : ((use) == 1 ? item.Weapon_Effect_1 : ((use) == 2 ? item.Weapon_Effect_2 : EMPTY_HSTRING));
 }
 
+// Скорость полёта снаряда в гексах за секунду (0 — не задана, использовать значение по умолчанию).
+int WeaponProjSpeed(AbstractItem item, int use)
+{
+    return (use) == 0 ? item.Weapon_ProjSpeed_0 : ((use) == 1 ? item.Weapon_ProjSpeed_1 : ((use) == 2 ? item.Weapon_ProjSpeed_2 : 0));
+}
+
 int WeaponRounds(AbstractItem item, int use)
 {
     return (use) == 0 ? item.Weapon_Round_0 : ((use) == 1 ? item.Weapon_Round_1 : ((use) == 2 ? item.Weapon_Round_2 : 0));

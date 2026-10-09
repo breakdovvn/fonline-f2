@@ -101,6 +101,9 @@ namespace ItemProps
 ///@ Property Item Common hstring Weapon_Effect_0 Mutable PublicSync Persistent Group = WeaponModes
 ///@ Property Item Common hstring Weapon_Effect_1 Mutable PublicSync Persistent Group = WeaponModes
 ///@ Property Item Common hstring Weapon_Effect_2 Mutable PublicSync Persistent Group = WeaponModes
+///@ Property Item Common int32 Weapon_ProjSpeed_0 Mutable PublicSync Persistent Group = WeaponModes
+///@ Property Item Common int32 Weapon_ProjSpeed_1 Mutable PublicSync Persistent Group = WeaponModes
+///@ Property Item Common int32 Weapon_ProjSpeed_2 Mutable PublicSync Persistent Group = WeaponModes
 ///@ Property Item Common int32 Weapon_ReloadAp Mutable PublicSync Persistent Group = WeaponProperties
 ///@ Property Item Common int32 Weapon_UnarmedCriticalBonus Mutable PublicSync Persistent Group = WeaponProperties
 ///@ Property Item Common int32 Weapon_CriticalFailture Mutable PublicSync Persistent Group = WeaponProperties
