@@ -93,6 +93,20 @@ bool TryOpenInventory()
     return true;
 }
 
+// Свободна ли линия огня из fromHex к targetHex в пределах maxDist — та же проверка,
+// что делает сервер в CritterActions::AttackCritter (иначе атака молча отклоняется).
+bool CanShootFromHex(mpos fromHex, mpos targetHex, int maxDist)
+{
+    int dist = Game.GetDistance(fromHex, targetHex);
+    if (dist > maxDist) {
+        return false;
+    }
+
+    mpos traced = targetHex;
+    CurMap.GetHexInPath(fromHex, traced, 0.0f, dist);
+    return traced == targetHex;
+}
+
 [[Event]]
 void ChosenProcess()
 {
@@ -557,32 +571,62 @@ void ChosenProcess()
 
             // Определение цели
             int dist = Game.GetDistance(chosen.Hex, mpos(hx, hy));
-            bool needMove = dist > maxDist;
-            // if( isAttack )
-            //    needMove = !CurMap->TraceBullet( chosen.HexX, chosen.HexY, hx, hy, maxDist, 0.0f, targetCr, false, nullptr, 0, nullptr, nullptr, nullptr, true
-            //    );
-            // else
-            //    needMove = !CheckDist( chosen.HexX, chosen.HexY, hx, hy, maxDist );
-            // TODO: r17 trace
-            if (needMove) {
-                if (dist > maxDist) {
-                    bool isRun = false; // 814 ( Settings.Movement.AlwaysRun && dist >= Settings.Movement.AlwaysRunUseDist );
-                    if (targetCr != null) {
-                        SetAction({Tla::ChosenMoveToCrit, targetCr.Id, 0, isRun ? 1 : 0, maxDist, 0, 0}, false, false);
-                    }
-                    else {
-                        SetAction({Tla::ChosenMove, hx, hy, isRun ? 1 : 0, maxDist, 0, 1}, false, false);
-                    }
 
-                    if (CurMap.GetPathLength(chosen, mpos(hx, hy), maxDist) > 0) {
-                        SetAction(curAction, true, false);
-                    }
+            if (isAttack) {
+                // Атака возможна, только если цель в радиусе И линия огня свободна. Иначе идём к
+                // ближайшей клетке на пути, откуда цель простреливается, и повторяем атаку.
+                bool canShoot = CanShootFromHex(chosen.Hex, mpos(hx, hy), maxDist);
+                mpos moveHex;
+                bool found = false;
+                int pathLen = 0;
 
-                    return;
+                if (!canShoot) {
+                    auto path = CurMap.GetPath(chosen.Hex, mpos(hx, hy), 1);
+                    pathLen = path.length();
+                    if (!path.isEmpty()) {
+                        mpos step = chosen.Hex;
+                        for (int i = 0; i < path.length(); i++) {
+                            CurMap.MoveHexByDir(step, path[i], 1);
+                            if (CanShootFromHex(step, mpos(hx, hy), maxDist)) {
+                                moveHex = step;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
                 }
 
-                Messaging::Info(TextPackKey(TextPackName::Game, "" + (MsgStr::StrFindpathAimblock)));
-                break;
+                string dbg = "CA atk me=" + chosen.Hex.x + "," + chosen.Hex.y + " tgt=" + hx + "," + hy + " maxD=" + maxDist +
+                             " can=" + (canShoot ? 1 : 0) + " len=" + pathLen + " found=" + (found ? 1 : 0) + " mv=" + moveHex.x + "," + moveHex.y;
+                Messaging::Info(dbg);
+                Game.Log(dbg);
+
+                if (!canShoot) {
+                    if (!found) {
+                        Messaging::Info(TextPackKey(TextPackName::Game, "" + (MsgStr::StrFindpathAimblock)));
+                        break;
+                    }
+
+                    bool isRun = false; // 814 ( Settings.Movement.AlwaysRun && dist >= Settings.Movement.AlwaysRunUseDist );
+                    SetAction({Tla::ChosenMove, moveHex.x, moveHex.y, isRun ? 1 : 0, 0, 0, 0}, false, false);
+                    SetAction(curAction, true, false);
+                    return;
+                }
+            }
+            else if (dist > maxDist) {
+                bool isRun = false; // 814 ( Settings.Movement.AlwaysRun && dist >= Settings.Movement.AlwaysRunUseDist );
+                if (targetCr != null) {
+                    SetAction({Tla::ChosenMoveToCrit, targetCr.Id, 0, isRun ? 1 : 0, maxDist, 0, 0}, false, false);
+                }
+                else {
+                    SetAction({Tla::ChosenMove, hx, hy, isRun ? 1 : 0, maxDist, 0, 1}, false, false);
+                }
+
+                if (CurMap.GetPathLength(chosen, mpos(hx, hy), maxDist) > 0) {
+                    SetAction(curAction, true, false);
+                }
+
+                return;
             }
 
             // Разворот к цели
