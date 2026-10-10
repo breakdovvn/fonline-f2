@@ -110,6 +110,17 @@ bool CanShootFromHex(mpos fromHex, mpos targetHex, int maxDist)
 [[Event]]
 void ChosenProcess()
 {
+    // Рентген-вырез (transparent egg) вокруг управляемого персонажа: прикрывающие стены и крыши
+    // становятся прозрачными, чтобы ГГ не терялся из виду. Слот Primary — сам ГГ.
+    if (HasCurMap) {
+        if (HasChosen) {
+            CurMap.SetTransparentEgg(TransparentEggSlot::Primary, Chosen);
+        }
+        else {
+            CurMap.ClearTransparentEgg(TransparentEggSlot::Primary);
+        }
+    }
+
     if (!HasChosen) {
         return;
     }
