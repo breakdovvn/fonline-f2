@@ -109,7 +109,7 @@
             if (useItem != null || (isAttack && proto != null)) {
                 Entity? entity = null;
                 if (isAttack) {
-                    @entity = CurMap.GetEntityAtScreenPos(Game.MousePos);
+                    @entity = CurMap.GetCritterAtScreenPos(Game.MousePos);
                 }
                 else {
                     @entity = CurMap.GetEntityAtScreenPos(Game.MousePos);

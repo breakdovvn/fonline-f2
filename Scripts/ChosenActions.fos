@@ -578,11 +578,9 @@ void ChosenProcess()
                 bool canShoot = CanShootFromHex(chosen.Hex, mpos(hx, hy), maxDist);
                 mpos moveHex;
                 bool found = false;
-                int pathLen = 0;
 
                 if (!canShoot) {
                     auto path = CurMap.GetPath(chosen.Hex, mpos(hx, hy), 1);
-                    pathLen = path.length();
                     if (!path.isEmpty()) {
                         mpos step = chosen.Hex;
                         for (int i = 0; i < path.length(); i++) {
@@ -595,11 +593,6 @@ void ChosenProcess()
                         }
                     }
                 }
-
-                string dbg = "CA atk me=" + chosen.Hex.x + "," + chosen.Hex.y + " tgt=" + hx + "," + hy + " maxD=" + maxDist +
-                             " can=" + (canShoot ? 1 : 0) + " len=" + pathLen + " found=" + (found ? 1 : 0) + " mv=" + moveHex.x + "," + moveHex.y;
-                Messaging::Info(dbg);
-                Game.Log(dbg);
 
                 if (!canShoot) {
                     if (!found) {
