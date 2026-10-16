@@ -107,19 +107,23 @@ bool CanShootFromHex(mpos fromHex, mpos targetHex, int maxDist)
     return traced == targetHex;
 }
 
+// Свой «рентген» управляемого персонажа: движок гасит по альфе только те спрайты-гексы стен,
+// что реально накрывают силуэт ГГ (Map.UpdateCritterOccluders), не трогая остальные гексы предмета.
+const int CUTOUT_FADE_ALPHA = 110;
+
+void UpdateTransparentCutout()
+{
+    if (!HasCurMap || !HasChosen) {
+        return;
+    }
+
+    CurMap.UpdateCritterOccluders(Chosen, CUTOUT_FADE_ALPHA);
+}
+
 [[Event]]
 void ChosenProcess()
 {
-    // Рентген-вырез (transparent egg) вокруг управляемого персонажа: прикрывающие стены и крыши
-    // становятся прозрачными, чтобы ГГ не терялся из виду. Слот Primary — сам ГГ.
-    if (HasCurMap) {
-        if (HasChosen) {
-            CurMap.SetTransparentEgg(TransparentEggSlot::Primary, Chosen);
-        }
-        else {
-            CurMap.ClearTransparentEgg(TransparentEggSlot::Primary);
-        }
-    }
+    UpdateTransparentCutout();
 
     if (!HasChosen) {
         return;
