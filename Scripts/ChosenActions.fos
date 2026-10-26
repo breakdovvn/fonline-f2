@@ -1,5 +1,5 @@
 // ChosenActions — очередь действий игрового персонажа (Chosen): постановка, покадровая обработка и исполнение команд игрока.
-// CLIENT: копит и прогоняет очередь действий (перемещение, атака, использование предметов и навыков, подбор, диалог, контейнеры), регенерирует ОД и шлёт серверу RemoteCall.
+// CLIENT: копит и прогоняет очередь действий (перемещение, атака, использование предметов и навыков, подбор, диалог, контейнеры) и шлёт серверу RemoteCall; ОД приходят от сервера.
 // SERVER: реализует эти RemoteCall и Lock*-хелперы, управляя busy/free-состоянием критера; опирается на коды действий из Tla, а также на боевую, диалоговую и предметную логику.
 
 namespace ChosenActions
@@ -16,6 +16,7 @@ namespace ChosenActions
 ///@ RemoteCall Server UseSkill(CritterProperty skill, ident targetCrId, ident targetItemId, hstring sceneryPid, mpos hex)
 ///@ RemoteCall Server UseItemOn(ident usedItemId, ident targetCrId, ident targetItemId, hstring sceneryPid, mpos hex, int32 timer)
 ///@ RemoteCall Server Attack(ident targetId, int32 mode)
+///@ RemoteCall Server Rpc_OpenInventory()
 /// RemoteCall Server Attack(ident targetId, int32 mode, mpos hex)
 /// RemoteCall Server UseSneak(bool enable)
 ///@ Event Common Game OnClientOperateContainer(Critter cr, Entity container, Item item, bool take)
@@ -68,6 +69,15 @@ void SetAction(any[] action, bool append, bool toBeginning)
     }
 }
 
+// Списывает AP на клиенте по тем же правилам, что и серверный CritterActions::ProcessAp:
+// округление до целых AP и локальный брейктайм. Авторитетен серверный CurrentAp, клиентская
+// запись нужна только для мгновенного прогноза, иначе атака анимируется при отказе по AP.
+void SpendAp(Critter cr, int ap)
+{
+    cr.CurrentAp = (cr.CurrentAp / Tla::AP_DIVIDER - ap) * Tla::AP_DIVIDER;
+    cr.WaitEndTick = Game.FrameTime + Time::Milliseconds(Settings.Movement.Breaktime);
+}
+
 // Открывает инвентарь. В боевом режиме за ОД; вне боя бесплатно. Если ОД не хватает — экран не открывается.
 // Всё дальнейшее взаимодействие внутри инвентаря бесплатно (RtApCostMoveItemInventory = 0).
 bool TryOpenInventory()
@@ -86,7 +96,8 @@ bool TryOpenInventory()
             return false;
         }
 
-        chosen.CurrentAp -= needApValue * Tla::AP_DIVIDER;
+        chosen.CurrentAp = (chosen.CurrentAp / Tla::AP_DIVIDER - needApValue) * Tla::AP_DIVIDER;
+        CurPlayer.ServerCall.Rpc_OpenInventory();
     }
 
     Gui::ShowScreen(GuiScreen::Inventory);
@@ -158,33 +169,8 @@ void ChosenProcess()
         return;
     }
 
-    // Регенерация ОД
-    if (chosen.CurrentAp < chosen.ActionPoints * Tla::AP_DIVIDER) {
-        nanotime tick = Game.FrameTime;
-        if (chosen.ApRegenerationTick == ZERO_NANOTIME) {
-            chosen.ApRegenerationTick = tick;
-        }
-
-        timespan delta = tick - chosen.ApRegenerationTick;
-        if (delta >= Time::Milliseconds(500)) {
-            chosen.ApRegenerationTick = tick;
-
-            int apRegeneration = chosen.ApRegenerationTime;
-            if (apRegeneration == 0) {
-                apRegeneration = Settings.Combat.ApRegeneration;
-            }
-
-            int maxAp = chosen.ActionPoints * Tla::AP_DIVIDER;
-            chosen.CurrentAp = chosen.CurrentAp + maxAp * delta.milliseconds / apRegeneration;
-            if (chosen.CurrentAp > int(maxAp)) {
-                chosen.CurrentAp = maxAp;
-            }
-        }
-    }
-
-    if (chosen.CurrentAp / Tla::AP_DIVIDER > chosen.ActionPoints) {
-        chosen.CurrentAp = chosen.ActionPoints * Tla::AP_DIVIDER;
-    }
+    // CurrentAp приходит от сервера (OwnerSync): клиент не регенерирует AP сам, иначе
+    // прогноз уходит вперёд и атака анимируется, когда сервер отказывает по нехватке AP.
 
     if (ChosenActions.length() == 0) {
         return;
@@ -336,7 +322,7 @@ void ChosenProcess()
             }
         }
         CurPlayer.ServerCall.ReloadWeapon(weapon.Id, ZERO_IDENT);
-        chosen.CurrentAp -= apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
     } break;
     case Tla::ChosenUseItem: {
         ident itemId = ChosenActions[1];
@@ -412,6 +398,11 @@ void ChosenProcess()
                 break;
             }
             if (chosen.CurrentAp / Tla::AP_DIVIDER < needApValue) {
+                if (isAttack) {
+                    Messaging::Info(Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Combat, "" + (MsgStr::StrCombatNeedAp))), "%d", needApValue));
+                    break;
+                }
+
                 return;
             }
         }
@@ -695,7 +686,7 @@ void ChosenProcess()
             (Game.OnCritterActionEx.Fire(true, chosen, CritterAction::UseItem, 0, item) == EventResult::ContinueChain);
         }
 
-        chosen.CurrentAp -= apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
         if (isAttack && targetCr != null) {
             CurPlayer.ServerCall.Attack(targetCr.Id, rate);
         }
@@ -782,7 +773,7 @@ void ChosenProcess()
 
         //Game.CustomCall("MoveItem " + itemCount + " " + itemId + " " + (itemSwap != null ? itemSwap.Id : ZERO_IDENT) + " " +
         //               (toSlot == CritterItemSlot::Outside ? "-1" : "" + toSlot));
-        chosen.CurrentAp -= apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
 
         if (toSlot != CritterItemSlot::Outside) {
             CurPlayer.ServerCall.MoveInvItem(itemId, toSlot);
@@ -880,7 +871,7 @@ void ChosenProcess()
             break;
         }
 
-        chosen.CurrentAp -= apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
 
         int actionExt = CritterActions::EncodeContainerActionExt(transferType, take, false);
         (Game.OnCritterActionEx.Fire(true, chosen, CritterAction::OperateContainer, actionExt, item) == EventResult::ContinueChain);
@@ -936,7 +927,7 @@ void ChosenProcess()
             break;
         }
 
-        chosen.CurrentAp -= apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
 
         int actionExt = CritterActions::EncodeContainerActionExt(transferType, take, true);
         (Game.OnCritterActionEx.Fire(true, chosen, CritterAction::OperateContainer, actionExt, null) == EventResult::ContinueChain);
@@ -976,6 +967,19 @@ void ChosenProcess()
                 break;
             }
 
+            int apCost = Settings.Movement.RtApCostUseSkill;
+            {
+                int needApValue = int(apCost);
+                if (chosen.ActionPoints < needApValue) {
+                    Messaging::Info(Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Combat, "" + (MsgStr::StrCombatNeedAp))), "%d", needApValue));
+                    break;
+                }
+                if (chosen.CurrentAp / Tla::AP_DIVIDER < needApValue) {
+                    return;
+                }
+            }
+
+            SpendAp(chosen, apCost);
             CurPlayer.ServerCall.UseSkill(skill, ZERO_IDENT, item.Id, EMPTY_HSTRING, ZERO_MPOS);
         }
         else {
@@ -1013,6 +1017,7 @@ void ChosenProcess()
                     return;
                 }
             }
+            SpendAp(chosen, apCost);
             CurPlayer.ServerCall.UseSkill(skill, ZERO_IDENT, item.Id, EMPTY_HSTRING, ZERO_MPOS);
         }
     } break;
@@ -1071,7 +1076,7 @@ void ChosenProcess()
             chosen.ChangeDir(dir);
         }
 
-        chosen.CurrentAp = chosen.CurrentAp - apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
 
         (Game.OnCritterActionEx.Fire(true, chosen, CritterAction::UseSkill, 0, null) == EventResult::ContinueChain);
         CurPlayer.ServerCall.UseSkill(skill, cr.Id, ZERO_IDENT, EMPTY_HSTRING, ZERO_MPOS);
@@ -1158,7 +1163,7 @@ void ChosenProcess()
             chosen.ChangeDir(dir);
         }
 
-        chosen.CurrentAp = chosen.CurrentAp - apCost * Tla::AP_DIVIDER;
+        SpendAp(chosen, apCost);
         // Game.CustomCall( "PickItem " + apCost + " " + pid + " " + hx + " " + hy );
         CurPlayer.ServerCall.PickItem(mpos(hx, hy), pid);
 
@@ -1221,6 +1226,7 @@ void ChosenProcess()
 
         //Game.CustomCall("PickCritter " + apCost + " " + crId + " " + isLoot);
 
+        SpendAp(chosen, apCost);
         CurPlayer.ServerCall.PickCritter(crId);
     } break;
     }
@@ -1259,6 +1265,7 @@ bool UseSkillOnScenerySuccess(CritterProperty skill, Critter chosen, hstring sce
                 return false;
             }
         }
+        SpendAp(chosen, apCost);
         (Game.OnCritterActionEx.Fire(true, chosen, CritterAction::UseSkill, 0, null) == EventResult::ContinueChain);
         CurPlayer.ServerCall.UseSkill(skill, ZERO_IDENT, ZERO_IDENT, sceneryProto, mpos(hx, hy));
     }
@@ -1412,6 +1419,25 @@ void UseItemOn(Player player, ident usedItemId, ident targetCrId, ident targetIt
     }
 
     CritterActions::UseItemOn(cr, usedItemId, targetCrId, targetItemId, sceneryPid, hex.x, hex.y, timer);
+}
+
+// Открытие инвентаря в бою списывает AP на сервере: CurrentAp клиента синхронизируется,
+// поэтому клиентская запись не должна оставаться единственным источником правды.
+[[ServerRemoteCall]]
+void Rpc_OpenInventory(Player player)
+{
+    Critter? cr = player.GetControlledCritter();
+    if (cr == null || !Time::IsTimeoutActive(cr.TimeoutBattle)) {
+        return;
+    }
+
+    int ap = Settings.Movement.RtApCostOpenInventory;
+    if (cr.CurrentAp / Tla::AP_DIVIDER < ap) {
+        return;
+    }
+
+    cr.CurrentAp = (cr.CurrentAp / Tla::AP_DIVIDER - ap) * Tla::AP_DIVIDER;
+    cr.ApRegenerationTick = Game.FrameTime + Time::Milliseconds(Settings.Movement.Breaktime);
 }
 
 #endif

@@ -650,7 +650,7 @@ namespace CritterProps
 ///@ Property Critter Common bool IsNoPush Mutable OwnerSync Persistent
 ///@ Property Critter Common int32 ItemsWeight Virtual Mutable
 ///@ Property Critter Common int32 ActionPoints Virtual Mutable
-///@ Property Critter Common int32 CurrentAp Mutable NoSync
+///@ Property Critter Common int32 CurrentAp Mutable OwnerSync
 ///@ Property Critter Common int32 BagId Mutable OwnerSync Persistent
 ///@ Property Critter Server ident LastWeaponId Mutable Persistent
 ///@ Property Critter Server bool LastWeaponNotFound Mutable Persistent
