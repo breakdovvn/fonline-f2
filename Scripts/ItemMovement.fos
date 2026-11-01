@@ -100,6 +100,14 @@ void OnCritterItemMoved(Critter cr, Item item, CritterItemSlot fromSlot)
 
     CritterItemSlot toSlot = item.CritterSlot;
 
+    // Смена оружия/рук у NPC проигрывает ShowWeapon/HideWeapon/SwitchItems:
+    // останавливаем ход на время анимации, как и при попадании.
+    if (!cr.ControlledByPlayer
+        && (fromSlot == CritterItemSlot::Main || fromSlot == CritterItemSlot::Secondary
+            || toSlot == CritterItemSlot::Main || toSlot == CritterItemSlot::Secondary)) {
+        Combat::PauseNpcMoveForAnim(cr);
+    }
+
     // Смена брони (надели или сняли) — пересчитываем визуальную модель криттера
     if (item.Type == ItemType::Armor && (fromSlot == CritterItemSlot::Armor || toSlot == CritterItemSlot::Armor)) {
         // Базовая модель «голого» персонажа по полу

@@ -1526,7 +1526,9 @@ EventResult OnPlayerMoveCritter(Player player, Critter cr, int& speed)
     }
 
     if (speed == 0) {
-        return EventResult::StopChain;
+        // Остановка не требует проверки скорости; StopChain здесь отклоняет stop на сервере,
+        // и клиент продолжает идти, проигрывая анимацию попадания.
+        return EventResult::ContinueChain;
     }
 
     if (cr.IsNoMove) {

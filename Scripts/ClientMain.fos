@@ -85,22 +85,86 @@ ident CachedArmorItemId = ZERO_IDENT;
 ident CachedActiveItemId = ZERO_IDENT;
 uint8 CachedActiveItemSlot = 0;
 
-// Мгновенно подменяет удерживаемое оружие активной руки: без этого экипировка/снятие
-// отображались в руках только после следующей анимации (шаг, выстрел и т.п.).
-void UpdateHeldWeapon(Critter chosen)
-{
-    Item? activeItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot(::CritterItem::ActiveSlot(chosen)));
-    if (activeItem == null) {
-        chosen.Animate(CritterStateAnim::None, CritterActionAnim::HideWeapon);
-        return;
-    }
+// Переключение рук: сначала проигрываем HideWeapon старого оружия, затем с задержкой
+// достаём новое. Без задержки короткий/однокадровый hide визуально сливается с draw.
+ident PendingShowWeaponId = ZERO_IDENT;
+nanotime PendingShowWeaponTick = ZERO_NANOTIME;
+const int SWITCH_SHOW_DELAY_MS = 250;
 
+bool IsSwitchShowPending()
+{
+    return PendingShowWeaponId != ZERO_IDENT;
+}
+
+void AnimateShowWeapon(Critter chosen, Item activeItem)
+{
     if (activeItem.Type == ItemType::Weapon) {
         chosen.Animate(activeItem.Weapon_StateAnim, CritterActionAnim::ShowWeapon, activeItem);
     }
     else {
         chosen.Animate(CritterStateAnim::None, CritterActionAnim::ShowWeapon, activeItem);
     }
+}
+
+void ProcessPendingShowWeapon()
+{
+    if (PendingShowWeaponId == ZERO_IDENT) {
+        return;
+    }
+
+    if (!HasChosen || !Chosen.IsAlive() || Chosen.IsKnockout()) {
+        PendingShowWeaponId = ZERO_IDENT;
+        return;
+    }
+
+    if (Game.FrameTime < PendingShowWeaponTick || Chosen.IsAnimPlaying()) {
+        return;
+    }
+
+    Item? activeItem = Chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot(::CritterItem::ActiveSlot(Chosen)));
+    if (activeItem != null && activeItem.Id == PendingShowWeaponId) {
+        AnimateShowWeapon(Chosen, activeItem);
+    }
+
+    PendingShowWeaponId = ZERO_IDENT;
+}
+
+// Мгновенно подменяет удерживаемое оружие активной руки: без этого экипировка/снятие
+// отображались в руках только после следующей анимации (шаг, выстрел и т.п.).
+void UpdateHeldWeapon(Critter chosen, Item? previousItem = null)
+{
+    // Смена активного оружия/руки проигрывает ShowWeapon/HideWeapon/SwitchItems;
+    // ход должен встать на паузу и продолжиться после анимации.
+    ChosenActions::PauseMoveForAnim();
+
+    Item? activeItem = chosen.GetItem(ItemProperty::CritterSlot, CritterItemSlot(::CritterItem::ActiveSlot(chosen)));
+
+    // Сначала убираем оружие из прежней руки, затем с задержкой достаём из новой.
+    if (previousItem != null && (activeItem == null || previousItem.Id != activeItem.Id)) {
+        CritterStateAnim previousStateAnim = CritterStateAnim::None;
+        if (previousItem.Type == ItemType::Weapon) {
+            previousStateAnim = previousItem.Weapon_StateAnim;
+        }
+        chosen.Animate(previousStateAnim, CritterActionAnim::HideWeapon, previousItem);
+
+        if (activeItem != null) {
+            PendingShowWeaponId = activeItem.Id;
+            PendingShowWeaponTick = Game.FrameTime + Time::Milliseconds(SWITCH_SHOW_DELAY_MS);
+        }
+        else {
+            PendingShowWeaponId = ZERO_IDENT;
+        }
+        return;
+    }
+
+    PendingShowWeaponId = ZERO_IDENT;
+
+    if (activeItem == null) {
+        chosen.Animate(CritterStateAnim::None, CritterActionAnim::HideWeapon);
+        return;
+    }
+
+    AnimateShowWeapon(chosen, activeItem);
 }
 
 void CheckEquippedItemsChanged()
@@ -121,6 +185,16 @@ void CheckEquippedItemsChanged()
     ident activeId = (int(chosen.ActiveItemSlot) == int(CritterItemSlot::Secondary)) ? secondaryId : mainId;
     bool activeChanged = (activeId != CachedActiveItemId || chosen.ActiveItemSlot != CachedActiveItemSlot);
 
+    Item? previousActiveItem = null;
+    if (activeChanged) {
+        if (mainItem != null && mainItem.Id == CachedActiveItemId) {
+            previousActiveItem = mainItem;
+        }
+        else if (secondaryItem != null && secondaryItem.Id == CachedActiveItemId) {
+            previousActiveItem = secondaryItem;
+        }
+    }
+
     if (mainId != CachedMainItemId || secondaryId != CachedSecondaryItemId || armorId != CachedArmorItemId || chosen.ActiveItemSlot != CachedActiveItemSlot) {
         CachedMainItemId = mainId;
         CachedSecondaryItemId = secondaryId;
@@ -130,7 +204,7 @@ void CheckEquippedItemsChanged()
         ItemViewsDirty = true;
 
         if (activeChanged) {
-            UpdateHeldWeapon(chosen);
+            UpdateHeldWeapon(chosen, previousActiveItem);
         }
     }
 }
@@ -216,6 +290,7 @@ uint UnarmedAimSpriteId()
 void loop()
 {
     CheckEquippedItemsChanged();
+    ProcessPendingShowWeapon();
 
     if (ItemViewsDirty) {
         ItemViewsDirty = false;
@@ -1481,6 +1556,12 @@ void CritterAction(bool localCall, Critter cr, CritterAction action, int actionE
         default:
             break; // Обрабатываем
         }
+    }
+
+    // Анимации урона/нокдауна/уклонения и локальные действия прерывают начатый ход
+    // выбранного; ChosenProcess возобновит его после завершения анимации.
+    if (cr.IsChosen && (localCall || ChosenActions::IsMovementInterruptingAction(action))) {
+        ChosenActions::PauseMoveForAnim();
     }
 
     AbstractItem proto = (item != null ? item : CritterItem::GetActive(cr));

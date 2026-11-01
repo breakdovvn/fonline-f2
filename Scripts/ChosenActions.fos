@@ -29,6 +29,7 @@ any[] ChosenActions = {};
 
 mpos LastIssuedMoveHex = mpos();
 int LastIssuedMoveSpeed = 0;
+bool MovePausedByAnim = false;
 
 [[ModuleInit]]
 void InitChosenActions()
@@ -76,6 +77,59 @@ void SpendAp(Critter cr, int ap)
 {
     cr.CurrentAp = (cr.CurrentAp / Tla::AP_DIVIDER - ap) * Tla::AP_DIVIDER;
     cr.WaitEndTick = Game.FrameTime + Time::Milliseconds(Settings.Movement.Breaktime);
+}
+
+// Анимации этих действий прерывают ход выбранного.
+bool IsMovementInterruptingAction(CritterAction action)
+{
+    switch (action) {
+    case CritterAction::Damage:
+    case CritterAction::DamageForce:
+    case CritterAction::Knockout:
+    case CritterAction::StandUp:
+    case CritterAction::Dead:
+    case CritterAction::Dodge:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Останавливает ход под анимацию; ChosenProcess возобновит его после завершения.
+void PauseMoveForAnim()
+{
+    if (!HasChosen) {
+        return;
+    }
+
+    if (Chosen.IsMoving()) {
+        Chosen.StopMove();
+    }
+
+    MovePausedByAnim = true;
+}
+
+// true, пока анимация играет; после её конца снимает паузу и очищает ход, если персонаж
+// уже не может идти (нокдаун/смерть).
+bool IsMovePausedByAnim()
+{
+    if (!MovePausedByAnim) {
+        return false;
+    }
+
+    if (ClientMain::IsSwitchShowPending()) {
+        return true;
+    }
+
+    if (HasChosen && Chosen.IsAnimPlaying()) {
+        return true;
+    }
+
+    MovePausedByAnim = false;
+    if (HasChosen && (!Chosen.IsAlive() || Chosen.IsKnockout())) {
+        ChosenActions.clear();
+    }
+    return false;
 }
 
 // Открывает инвентарь. В боевом режиме за ОД; вне боя бесплатно. Если ОД не хватает — экран не открывается.
@@ -153,6 +207,11 @@ void ChosenProcess()
         // bool shootBorders = Gui::Cursor == CursorType::UseWeapon;
         // int attackDist = Parameters::GetActiveItemAttackDistance(chosen);
         // CurMap.SetShootBorders(shootBorders, attackDist);
+
+        // Анимация (урон/нокдаун/уклонение/локальное действие) держит ход на паузе до завершения.
+        if (IsMovePausedByAnim()) {
+            return;
+        }
 
         if (chosen.IsMoving()) {
             // Даём действию перемещения из очереди перенацелить текущий ход (например, при новом клике по карте);

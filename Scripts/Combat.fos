@@ -117,8 +117,39 @@ void runTree(CombatRes[] combatResults, int ptr, int delayMs)
 void DelayedDodge(Critter target)
 {
     if (target.IsAlive()) {
+        PauseNpcMoveForAnim(target);
         target.Action(CritterAction::Dodge, 0, null);
     }
+}
+
+// Останавливает ход NPC под анимацию попадания/уклонения и возвращает его к прежней цели
+// после неё. Для управляемых игроком криттеров это делает клиент.
+[[TimeEvent]]
+void ResumeNpcMoveAfterAnim(Critter target, any[] data)
+{
+    if (target.IsDestroyed || !target.IsAlive() || target.IsKnockout() || target.IsMoving()) {
+        return;
+    }
+
+    target.MoveToHex(mpos(int(data[0]), int(data[1])), 0, int(data[2]), null);
+}
+
+void PauseNpcMoveForAnim(Critter target)
+{
+    if (target.ControlledByPlayer || !target.IsMoving()) {
+        return;
+    }
+
+    MovingContext? moving = target.GetMovingContext();
+    if (moving == null) {
+        return;
+    }
+
+    mpos endHex = moving.GetEndHex();
+    int speed = moving.GetSpeed();
+    CritterState::Wait(target, Settings.Combat.DamageHitDelay);
+    target.StopMoving();
+    target.StartTimeEvent(Time::Milliseconds(Settings.Combat.DamageHitDelay), ResumeNpcMoveAfterAnim, {endHex.x, endHex.y, speed});
 }
 
 // Author: Atom, cvet
@@ -1763,6 +1794,7 @@ void CombatAttack(Critter cr, Critter target, AbstractItem weapon, int weaponMod
             target.StartTimeEvent(Time::Milliseconds(flightTimeMs), DelayedDodge);
         }
         else {
+            PauseNpcMoveForAnim(target);
             target.Action(CritterAction::Dodge, 0, null); // Todo: тип спереди/сзади
         }
     }
@@ -2363,6 +2395,7 @@ void ApplyDamage(AttackStruct attack, Critter target, int rounds, bool isCritica
     // Урон
     else if (not target.IsKnockout()) {
         // Анимация попадания
+        PauseNpcMoveForAnim(target);
         if (attack.ShowHitAnimForce) {
             target.Action(CritterAction::DamageForce, (attackFront ? 0 : 1), null);
         }
