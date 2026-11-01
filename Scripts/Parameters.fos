@@ -739,11 +739,6 @@ void UseMainItem()
 
     Critter chosen = Chosen;
 
-    if (Gui::Cursor == CursorType::UseWeapon) {
-        Gui::Cursor = CursorType::Default;
-        return;
-    }
-
     AbstractItem item = CritterItem::GetActive(chosen);
     CritterItemSlot activeSlot = CritterItemSlot(CritterItem::ActiveSlot(chosen));
     int mode = (chosen.GetItem(ItemProperty::CritterSlot, activeSlot) == null) ? chosen.HandsItemMode : item.Mode;
@@ -751,12 +746,22 @@ void UseMainItem()
     int aim = WeaponHelpers::WeaponModeAim(mode);
     Item? realItem = cast<Item?>(item);
     ident itemId = realItem != null ? realItem.Id : ZERO_IDENT;
-    // Ветвимся по разобранному слоту, а не по упакованному режиму: mode содержит ещё и прицел
-    // в старших битах, поэтому при любом прицеливании ни одна ветка не срабатывала
+
+    // Перезарядка имеет приоритет над сбросом курсора атаки: иначе первый клик по
+    // пластине оружия в режиме перезарядки только снимает курсор, а действие не ставится.
     if (use == WeaponHelpers::USE_RELOAD) {
         ChosenActions::SetChosenActions({Tla::ChosenUseItem, itemId, 0, ClientDefines::TARGET_SELF_ITEM, 0, WeaponHelpers::USE_RELOAD, 0});
+        return;
     }
-    else if (use < WeaponHelpers::MAX_USES && item.Type == ItemType::Weapon) {
+
+    if (Gui::Cursor == CursorType::UseWeapon) {
+        Gui::Cursor = CursorType::Default;
+        return;
+    }
+
+    // Ветвимся по разобранному слоту, а не по упакованному режиму: mode содержит ещё и прицел
+    // в старших битах, поэтому при любом прицеливании ни одна ветка не срабатывала
+    if (use < WeaponHelpers::MAX_USES && item.Type == ItemType::Weapon) {
         Gui::Cursor = CursorType::UseWeapon;
     }
     else if (use == WeaponHelpers::USE_USE && item.IsCanUseOnSmth) {

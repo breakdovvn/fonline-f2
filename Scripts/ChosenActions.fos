@@ -398,7 +398,7 @@ void ChosenProcess()
                 break;
             }
             if (chosen.CurrentAp / Tla::AP_DIVIDER < needApValue) {
-                if (isAttack) {
+                if (isAttack || isReload) {
                     Messaging::Info(Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Combat, "" + (MsgStr::StrCombatNeedAp))), "%d", needApValue));
                     break;
                 }
@@ -465,7 +465,8 @@ void ChosenProcess()
                 }
 
                 if (chosen.CurrentAp / Tla::AP_DIVIDER < needApValue) {
-                    return;
+                    Messaging::Info(Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Combat, "" + (MsgStr::StrCombatNeedAp))), "%d", needApValue));
+                    break;
                 }
             }
             if (isActiveItem) {
