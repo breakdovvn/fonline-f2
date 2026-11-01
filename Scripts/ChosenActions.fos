@@ -280,6 +280,14 @@ void ChosenProcess()
             break;
         }
 
+        // Нельзя вставать на гекс, занятый другим криттером.
+        if (actionType == Tla::ChosenMove) {
+            Critter? occupying = CurMap.GetCritterOnHex(hex, CritterFindType::Any);
+            if (occupying != null) {
+                break;
+            }
+        }
+
         // Не может двигаться
         if (chosen.IsNoMove) {
             Messaging::Info(TextPackKey(TextPackName::Game, "" + (MsgStr::StrCritterCantMove)));

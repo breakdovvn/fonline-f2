@@ -16361,7 +16361,7 @@ namespace Cursor
                 if (!LastMoveValid || targetHex != LastMoveTargetHex || Chosen.Hex != LastMoveChosenHex) {
                     LastMoveTargetHex = targetHex;
                     LastMoveChosenHex = Chosen.Hex;
-                    LastMoveReachable = Chosen.IsAlive() && CurMap.IsHexMovable(targetHex);
+                    LastMoveReachable = Chosen.IsAlive() && CurMap.IsHexMovable(targetHex) && CurMap.GetCritterOnHex(targetHex, CritterFindType::Any) == null;
                     if (LastMoveReachable) {
                         auto path = CurMap.GetPath(Chosen, targetHex, 0);
                         mpos pathHex = Chosen.Hex;
