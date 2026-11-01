@@ -8,13 +8,15 @@
 namespace GuiScreensExt
 {
 
-// Todo: ввести рисование подсветки гекса при курсоре передвижения, см. CurMap.SetCursorPos
-
 ///@ Setting Client bool Gui.HideCursor
 ///@ RemoteCall Server GuiPingRequest()
 ///@ RemoteCall Client GuiPingAnswer()
 
 #if CLIENT
+
+// Курсор, выбранный на игровом экране. Экраны интерфейса при появлении ставят свой
+// курсор (обычно Default), поэтому при возврате на Game его нужно восстановить.
+CursorType GameCursor = CursorType::Move;
 
 // Точка входа модуля: подписываемся на клиентские события для переключения экранов.
 [[ModuleInit]]
@@ -26,6 +28,7 @@ void InitGuiScreensExt()
     Game.OnMapUnload.Subscribe(OnMapUnload);
     Game.OnConnecting.Subscribe(OnConnecting);
     Game.OnDisconnected.Subscribe(OnDisconnected);
+    Game.OnLoop.Subscribe(TrackGameCursor);
 }
 
 // При старте клиента показываем экран логина (без автоподключения к серверу).
@@ -47,7 +50,29 @@ void OnMapLoaded()
     Gui::HideAllScreens();
     Gui::ShowScreen(HasCurMap ? GuiScreen::Game : GuiScreen::GlobalMap);
     Gui::Cursor = CursorType::Move;
+    GameCursor = CursorType::Move;
     ScreenFadeOut();
+}
+
+// Запоминаем курсор, выбранный на игровом экране, чтобы восстановить его после UI-экранов.
+[[Event]]
+void TrackGameCursor()
+{
+    if (!HasChosen) {
+        return;
+    }
+
+    Gui::Screen? screen = Gui::GetActiveScreen();
+    if (screen == null || screen.Num != GuiScreen::Game) {
+        return;
+    }
+
+    CursorType cursor = Gui::Cursor;
+    if (cursor == CursorType::Hand) {
+        return;
+    }
+
+    GameCursor = cursor;
 }
 
 // Карта выгружается — убираем все экраны.

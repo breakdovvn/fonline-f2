@@ -92,6 +92,11 @@
         Sprite::Sprite CursorMoveX;
 
         ucolor CurCrittersCountour;
+
+        mpos LastMoveTargetHex;
+        mpos LastMoveChosenHex;
+        bool LastMoveReachable;
+        bool LastMoveValid;
     }
 }
 //       "OnInit":
@@ -131,8 +136,22 @@
 {
     {
         {
+            Gui::Screen? activeScreen = Gui::GetActiveScreen();
+
             if (Settings.Gui.HideCursor) {
-                return;
+                // Сообщение в HUD скрывает игровой курсор; на игровом экране оставляем его видимым.
+                if (activeScreen == null || activeScreen.Num != GuiScreen::Game) {
+                    return;
+                }
+            }
+
+            // Над элементами HUD вместо игрового курсора показываем стандартную стрелку.
+            if (activeScreen != null && activeScreen.Num == GuiScreen::Game) {
+                Gui::Object hud = activeScreen.GetChild(0);
+                if (hud.FindMouseHit() != null) {
+                    CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
+                    return;
+                }
             }
 
             int cursor = Gui::Cursor;
@@ -241,11 +260,13 @@
             }
             else if (cursor == CursorType::Move) {
                 if (!HasCurMap) {
+                    LastMoveValid = false;
                     CursorDefault.Draw(Game.MousePos, isize(), -1, -1);
                     return;
                 }
 
                 if (!HasChosen) {
+                    LastMoveValid = false;
                     return;
                 }
 
@@ -262,8 +283,24 @@
                     return;
                 }
 
+                // Клетка недоступна, если в неё нельзя встать или до неё нет точного пути.
+                if (!LastMoveValid || targetHex != LastMoveTargetHex || Chosen.Hex != LastMoveChosenHex) {
+                    LastMoveTargetHex = targetHex;
+                    LastMoveChosenHex = Chosen.Hex;
+                    LastMoveReachable = Chosen.IsAlive() && CurMap.IsHexMovable(targetHex);
+                    if (LastMoveReachable) {
+                        auto path = CurMap.GetPath(Chosen, targetHex, 0);
+                        mpos pathHex = Chosen.Hex;
+                        for (int i = 0; i < path.length(); i++) {
+                            CurMap.MoveHexByDir(pathHex, path[i], 1);
+                        }
+                        LastMoveReachable = (pathHex == targetHex);
+                    }
+                    LastMoveValid = true;
+                }
+
                 ipos hexPos = CurMap.GetHexScreenPos(targetHex);
-                if (CurMap.IsHexMovable(targetHex)) {
+                if (LastMoveReachable) {
                     CursorMovePost.Draw(hexPos, isize(), 0, 0);
                     CursorMovePre.Draw(hexPos, isize(), 0, 0);
                 }

@@ -159,7 +159,14 @@
 //   "OnInit": null,
 //   "OnShow": null,
 //   "OnHide": null,
-//   "OnAppear": null,
+//   "OnAppear":
+{
+    {
+        {
+            Gui::Cursor = ::GuiScreensExt::GameCursor;
+        }
+    }
+}
 //   "OnDisappear": null,
 //   "OnDraw":
 {
