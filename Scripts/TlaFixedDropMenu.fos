@@ -7,17 +7,60 @@ namespace TlaFixedDropMenu
 #if CLIENT
 
 bool DropMenuEnabled = true;
+bool DropMenuCursorHidden = false;
 
 void SetDropMenuEnabled(bool enable)
 {
     DropMenuEnabled = enable;
 }
 
+bool IsCursorHidden()
+{
+    return DropMenuCursorHidden;
+}
+
 class TlaFixedDropMenu : FixedDropMenu::FixedDropMenu
 {
+    // Позиция, в которой меню открылось. Меню не должно ездить за мышью и не должно
+    // удерживать курсор через Game.SetMousePos — иначе оно дрожит на месте.
+    ipos MenuPos;
+
     TlaFixedDropMenu(MouseButton mouseButton, CursorType cursor, timespan showTime, int buttonHeight, string artDir, string openSound)
     {
         super(mouseButton, cursor, showTime, buttonHeight, artDir, openSound);
+    }
+
+    void Draw() override
+    {
+        if (!DropMenuEnabled || ShowButtons.length() == 0) {
+            return;
+        }
+
+        ipos pos = MenuPos + ipos(20, 20);
+        int activeIndex = PressedOffsetY / ButtonHeight;
+        activeIndex = Math::Clamp(activeIndex, 0, ShowButtons.length() - 1);
+        for (int i = 0; i < ShowButtons.length(); i++) {
+            FixedDropMenu::DropButton button = ShowButtons[i];
+            Sprite::Sprite pic = i == activeIndex ? button.PicActive : button.PicNormal;
+            pic.Draw(pos);
+            pos.y += ButtonHeight;
+        }
+    }
+
+    bool PreMouseMove(ipos offset) override
+    {
+        if (!DropMenuEnabled) {
+            return false;
+        }
+
+        if (Pressed) {
+            if (offset != ZERO_IPOS) {
+                PressedOffsetY += offset.y;
+            }
+            return true;
+        }
+
+        return false;
     }
 
     void MouseUp(MouseButton button) override
@@ -32,6 +75,9 @@ class TlaFixedDropMenu : FixedDropMenu::FixedDropMenu
     {
         if (DropMenuEnabled) {
             FixedDropMenu::FixedDropMenu::MouseDown(button);
+            if (Pressed) {
+                MenuPos = Game.MousePos;
+            }
         }
     }
 
@@ -39,14 +85,29 @@ class TlaFixedDropMenu : FixedDropMenu::FixedDropMenu
     {
         if (DropMenuEnabled) {
             FixedDropMenu::FixedDropMenu::Loop();
+
+            if (!Pressed && ShowButtons.length() > 0) {
+                MenuPos = Game.MousePos;
+            }
         }
+
+        // Пока открыто меню, игровой курсор скрыт.
+        DropMenuCursorHidden = DropMenuEnabled && ShowButtons.length() > 0;
     }
 
     void PostMouseMove(ipos offset) override
     {
-        if (DropMenuEnabled) {
-            FixedDropMenu::FixedDropMenu::PostMouseMove(offset);
+        if (!DropMenuEnabled) {
+            return;
         }
+
+        // Пока меню открыто по зажатой ЛКМ, выбор идёт через накопленный offset,
+        // а объект под курсором не пересчитывается — иначе меню закроется при уходе мыши.
+        if (Pressed) {
+            return;
+        }
+
+        FixedDropMenu::FixedDropMenu::PostMouseMove(offset);
     }
 }
 

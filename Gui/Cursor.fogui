@@ -136,6 +136,10 @@
 {
     {
         {
+            if (TlaFixedDropMenu::IsCursorHidden()) {
+                return;
+            }
+
             Gui::Screen? activeScreen = Gui::GetActiveScreen();
 
             if (Settings.Gui.HideCursor) {
