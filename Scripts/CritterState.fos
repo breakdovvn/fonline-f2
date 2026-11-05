@@ -66,6 +66,7 @@ void ToDead(Critter cr, CritterActionAnim actionAnim, Critter? killer)
     }
 
     cr.DeadActionAnim = actionAnim;
+    cr.StopMoving();
     cr.SetCondition(CritterCondition::Dead, actionAnim, null);
     if (cr.CountTimeEvent(OnCritterIdle) != 0) {
         cr.StopTimeEvent(OnCritterIdle);
@@ -194,6 +195,7 @@ void ToKnockout(Critter cr, CritterActionAnim actionAnimBegin, CritterActionAnim
     LineTracer::LineTracerHex(map, cr.Hex, knockHex, tracer);
 
     // Перемещаем на найденное место
+    cr.StopMoving();
     cr.TransferToHex(tracer.EndHex, dir);
     cr.KnockoutActionAnim = actionAnimIdle;
     cr.SetCondition(CritterCondition::Knockout, actionAnimBegin, null);
