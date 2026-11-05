@@ -2599,6 +2599,7 @@ void CommenceExplosion(AttackStruct attack, Map map, mpos targetHex, Critter? ta
         return;
     }
 
+    Effects::PlaySound(map, Game.Random(0, 1) == 0 ? "sound/sfx/whn1xxx1.acm".hstr() : "sound/sfx/whn1xxx2.acm".hstr(), targetHex, 2);
     Effects::QuakeScreen(map);
     Critter[] critsHit = map.GetCrittersInRadius(targetHex, radius, CritterFindType::NonDead);
     ident targetId = (target != null ? target.Id : ZERO_IDENT);

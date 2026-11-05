@@ -6,8 +6,6 @@ IsNoBlock = True
 IsShootThru = True
 IsLightThru = True
 PicMap = art/misc/EXPP.FRM
-IsStatic = True
-IsScenery = True
 
 $Text russ = "Взрыв"
 $Text engl = "Explosion"

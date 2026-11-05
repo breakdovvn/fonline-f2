@@ -6,8 +6,6 @@ IsNoBlock = True
 IsShootThru = True
 IsLightThru = True
 PicMap = art/misc/EMPXPLD.FRM
-IsStatic = True
-IsScenery = True
 
 $Text russ = "Электромагнитный взрыв"
 $Text engl = "EMP Explosion"
