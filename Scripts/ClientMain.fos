@@ -1740,10 +1740,7 @@ void CritterAction(bool localCall, Critter cr, CritterAction action, int actionE
 
         break;
     case CritterAction::Dead:
-        if (not cr.IsDead()) {
-            cr.Animate(CritterStateAnim::None, CritterActionAnim(actionExt));
-        }
-
+        cr.Animate(CritterStateAnim::None, CritterActionAnim(actionExt));
         break;
     case CritterAction::Connect:
         break;
