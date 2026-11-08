@@ -97,7 +97,8 @@ void DoUseItemFromInventory(Critter? cr, Item? item)
 bool CanDialog(Critter? cr, Item? item)
 {
     // ToDo — диалог с предметами
-    return cr != null && IsChosenAlive() && !cr.ControlledByPlayer && cr.IsAlive() && cr.DialogId != EMPTY_HSTRING && !cr.IsNoTalk;
+    return cr != null && IsChosenAlive() && !Time::IsTimeoutActive(Chosen.TimeoutBattle) && !cr.ControlledByPlayer && cr.IsAlive() &&
+           cr.DialogId != EMPTY_HSTRING && !cr.IsNoTalk;
 }
 
 void Dialog(Critter? cr, Item? item)
@@ -254,6 +255,11 @@ void StartDialog(Player player, ident npcId)
     Critter? cr = player.GetControlledCritter();
     Critter? npc = Game.GetCritter(npcId);
     if (cr == null || npc == null) {
+        return;
+    }
+
+    // Нельзя начинать диалог в бою (в том числе с текущим противником).
+    if (Time::IsTimeoutActive(cr.TimeoutBattle)) {
         return;
     }
 
