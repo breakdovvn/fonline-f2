@@ -148,20 +148,11 @@ void CritterAttack(Critter cr, Critter target, Item weapon, int weaponMode, Prot
     Game.OnCritterAttacked.Fire(target, cr);
 }
 
-// Вызывается, когда криттер атакует другого.
-[[Event]]
-void CritterAttacked(Critter cr, Critter attacker)
+// Реакция соседних NPC на атаку/смерть: таблица команд решает, кто помогает.
+void ReactToAttack(Critter cr, Critter attacker)
 {
-    Critter[] other = cr.GetCritters(CritterSeeType::WhoSeeMe, CritterFindType::NonDead);
-    for (int i = 0; i < other.length(); i++) {
-        other[i].OnSomeCritterAttacked.Fire(cr, attacker);
-    }
-
     if (cr.ControlledByPlayer) {
-        return; // Игрокам помощь не подключается
-    }
-    else {
-        NpcPlanes::AddAttackPlane(cr, 0, attacker); // Отвечаем на атаку
+        return;
     }
 
     int helpers = 0;
@@ -174,13 +165,11 @@ void CritterAttacked(Critter cr, Critter attacker)
         NpcPlanes::NpcPlane? plane = NpcPlanes::GetCurPlane(critters[i]);
         if (plane != null && plane.Type == NpcPlanes::AI_PLANE_ATTACK && plane.Attack_TargId == attacker.Id) {
             helpers++;
-            if (helpers >= maxHelpers) {
-                return; // Больше помощь не нужна
-            }
-
             excluded[i] = true;
         }
     }
+
+    bool canAddPlans = helpers < maxHelpers;
 
     int crHpProc = cr.CurrentHp * 100 / cr.MaxLife;
     int teamId = cr.TeamId;
@@ -242,12 +231,37 @@ void CritterAttacked(Critter cr, Critter attacker)
             continue;
         }
 
-        NpcPlanes::AddAttackPlane(someCr, 0, attacker);
-        helpers++;
-        if (helpers >= maxHelpers) {
-            break; // Достаточно
+        // Даже если лимит немедленных планов исчерпан, запоминаем врага:
+        // AI подхватит его из EnemyStack на следующем тике.
+        EnemyStack::AddEnemyToStack(someCr, attacker.Id);
+
+        bool planAdded = false;
+        if (canAddPlans && helpers < maxHelpers) {
+            planAdded = NpcPlanes::AddAttackPlane(someCr, 0, attacker);
+            if (planAdded) {
+                helpers++;
+            }
         }
     }
+}
+
+// Вызывается, когда криттер атакует другого.
+[[Event]]
+void CritterAttacked(Critter cr, Critter attacker)
+{
+    Critter[] other = cr.GetCritters(CritterSeeType::WhoSeeMe, CritterFindType::NonDead);
+    for (int i = 0; i < other.length(); i++) {
+        other[i].OnSomeCritterAttacked.Fire(cr, attacker);
+    }
+
+    if (cr.ControlledByPlayer) {
+        return; // Игрокам помощь не подключается
+    }
+    else {
+        NpcPlanes::AddAttackPlane(cr, 0, attacker); // Отвечаем на атаку
+    }
+
+    ReactToAttack(cr, attacker);
 }
 
 // Вызывается, когда криттер обкрадывает другого.
@@ -1313,6 +1327,12 @@ void CritterDead(Critter cr, Critter? killer)
 
     if (map != null) {
         map.OnCritterDead.Fire(cr, killer);
+    }
+
+    // Правило TeamsTable::IfDead срабатывает только после смерти: предыдущий вызов
+    // OnCritterAttacked происходит до применения урона, когда жертва ещё жива.
+    if (killer != null && !cr.ControlledByPlayer) {
+        ReactToAttack(cr, killer);
     }
 }
 
