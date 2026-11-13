@@ -360,7 +360,7 @@ void DoRunFlyEffect(hstring effectPid, mpos hex, mpos targetHex, int flightTimeM
 void FlyEffectDeferredDestroy(Item item, TimeEventContext event)
 {
     if (!item.IsMoving()) {
-        item.Finish();
+        item.FinishInstant();
         event.Stop();
     }
 }
