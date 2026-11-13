@@ -143,10 +143,8 @@
             Gui::Screen? activeScreen = Gui::GetActiveScreen();
 
             if (Settings.Gui.HideCursor) {
-                // Сообщение в HUD скрывает игровой курсор; на игровом экране оставляем его видимым.
-                if (activeScreen == null || activeScreen.Num != GuiScreen::Game) {
-                    return;
-                }
+                // HUD-сообщение (лог) скрывает игровой курсор и рисует свои стрелки прокрутки.
+                return;
             }
 
             // Над элементами HUD вместо игрового курсора показываем стандартную стрелку.
