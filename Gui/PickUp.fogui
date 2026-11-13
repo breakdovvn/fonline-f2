@@ -241,6 +241,7 @@
             ::GuiScreens::Preview::Preview preview = cast<::GuiScreens::Preview::Preview>(GetChild(0));
             preview.PreviewCritterId = params["TargetCritterId"];
             preview.PreviewItemId = params["TargetItemId"];
+            preview.AutoRotate = false;
         }
     }
 }

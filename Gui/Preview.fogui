@@ -28,6 +28,7 @@
         Sprite::Sprite spr = Sprite::Sprite();
         int CurDir = 0;
         nanotime LastDirChangeTick = ZERO_NANOTIME;
+        bool AutoRotate = true;
     }
 }
 //   "OnInit":
@@ -62,6 +63,21 @@
                 if (cr == null) {
                     return;
                 }
+
+                mdir dir = cr.Dir;
+                if (AutoRotate) {
+                    nanotime curTick = Game.FrameTime;
+                    if (curTick - LastDirChangeTick >= Time::Milliseconds(500)) {
+                        LastDirChangeTick = curTick;
+                        CurDir++;
+                        if (CurDir >= (Settings.Geometry.MapHexagonal ? 6 : 8)) {
+                            CurDir = 0;
+                        }
+                    }
+                    dir = mdir(CurDir);
+                }
+
+                CritterActionAnim actionAnim = ::Animation::GetIdleActionAnim(cr);
                 // TODO: IsModel работает только на карте, на глобале будет ошибка.
                 if (cr.IsModel()) {
                     float[] chaPosition = array<float>(14);
@@ -70,7 +86,7 @@
                     chaPosition[1] = AbsolutePos.y + Size.height - 10;
                     // Rotation
                     chaPosition[2] = Settings.Geometry.MapCameraAngle;
-                    chaPosition[3] = (Settings.Geometry.MapHexagonal ? 150 - CurDir * 60 : 135 - CurDir * 45);
+                    chaPosition[3] = (Settings.Geometry.MapHexagonal ? 150 - dir.hex.value * 60 : 135 - dir.hex.value * 45);
                     chaPosition[4] = 0.0;
                     // Scale
                     chaPosition[5] = 1.0;
@@ -88,25 +104,18 @@
                     // Todo: rerstore gui Game.DrawCritter3d( 2, cr.ModelName, int(cr.GetStateAnim()), int(CritterActionAnim::Idle), cr.ModelLayers, chaPosition, 0 );
                 }
                 else {
-                    nanotime curTick = Game.FrameTime;
-                    if (curTick - LastDirChangeTick >= Time::Milliseconds(500)) {
-                        LastDirChangeTick = curTick;
-                        CurDir++;
-                        if (CurDir >= (Settings.Geometry.MapHexagonal ? 6 : 8)) {
-                            CurDir = 0;
-                        }
-                    }
                     Game.DrawCritter2d(cr.ModelName,
                                        ::Animation::GetStateAnim(cr),
-                                       CritterActionAnim::Idle,
-                                       CurDir,
+                                       actionAnim,
+                                       dir,
                                        AbsolutePos.x,
                                        AbsolutePos.y,
                                        AbsolutePos.x + Size.width,
                                        AbsolutePos.y + Size.height,
                                        false,
                                        true,
-                                       0);
+                                       0,
+                                       cr.IsDead());
                 }
             }
             else if (PreviewItemId != ZERO_IDENT) {
