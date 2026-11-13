@@ -3152,7 +3152,7 @@ namespace Game
 
         void OnDrawItem(Item item, Gui::Object cell, int cellIndex) override
         {
-            SetText(item.Deteriorable ? item.Deterioration + "%" : "");
+            SetText(item.Deteriorable ? 100 - ::Tla::Clamp(item.Deterioration * 100 / ::Tla::MaxDeterioration, 0, 100) + "%" : "");
         }
     };
 
@@ -3408,7 +3408,7 @@ namespace Game
 
             if (item.Deteriorable) {
                 indicatorMax = ::Tla::MaxDeterioration;
-                indicatorCur = item.Deterioration;
+                indicatorCur = ::Tla::MaxDeterioration - item.Deterioration;
             }
 
             int[] rect = {AbsolutePos.x, AbsolutePos.y, Size.width, Size.height};
