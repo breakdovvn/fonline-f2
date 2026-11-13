@@ -1154,22 +1154,20 @@ int InternalCrtypeTextId(int num)
 #if CLIENT
 string NpcName(hstring dlg, hstring pid)
 {
-    if (dlg != EMPTY_HSTRING && Game.IsTextPresent(TextPackKey(TextPackName::Dialogs, "" + (dlg.uhash + 10)))) {
-        return Game.GetText(TextPackKey(TextPackName::Dialogs, "" + (dlg.uhash + 10)));
+    if (dlg != EMPTY_HSTRING && Game.IsTextPresent(TextPackKey(TextPackName::Dialogs, dlg, "Name"))) {
+        return Game.GetText(TextPackKey(TextPackName::Dialogs, dlg, "Name"));
     }
-    else {
-        return Game.GetText(TextPackKey(TextPackName::Critters, "" + (pid.uhash)));
-    }
+
+    return Game.GetText(TextPackKey(TextPackName::Critters, pid));
 }
 
 string NpcDesc(hstring dlg, hstring pid)
 {
-    if (dlg != EMPTY_HSTRING && Game.IsTextPresent(TextPackKey(TextPackName::Dialogs, "" + (dlg.uhash + 21)))) {
-        return Game.GetText(TextPackKey(TextPackName::Dialogs, "" + (dlg.uhash + 21)));
+    if (dlg != EMPTY_HSTRING && Game.IsTextPresent(TextPackKey(TextPackName::Dialogs, dlg, "DescAliveFull"))) {
+        return Game.GetText(TextPackKey(TextPackName::Dialogs, dlg, "DescAliveFull"));
     }
-    else {
-        return Game.GetText(TextPackKey(TextPackName::Critters, "" + (pid.uhash + "Desc".hstr().uhash)));
-    }
+
+    return Game.GetText(TextPackKey(TextPackName::Critters, pid, "Desc"));
 }
 #endif
 }
