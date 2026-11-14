@@ -172,17 +172,19 @@ bool CanShootFromHex(mpos fromHex, mpos targetHex, int maxDist)
     return traced == targetHex;
 }
 
-// Свой «рентген» управляемого персонажа: движок гасит по альфе только те спрайты-гексы стен,
-// что реально накрывают силуэт ГГ (Map.UpdateCritterOccluders), не трогая остальные гексы предмета.
-const int CUTOUT_FADE_ALPHA = 110;
-
+// Шейдерный egg включаем только когда стена/крыша реально перекрывает силуэт ГГ.
 void UpdateTransparentCutout()
 {
     if (!HasCurMap || !HasChosen) {
         return;
     }
 
-    CurMap.UpdateCritterOccluders(Chosen, CUTOUT_FADE_ALPHA);
+    if (CurMap.IsCritterOccluded(Chosen)) {
+        CurMap.SetTransparentEgg(TransparentEggSlot::Primary, Chosen, isize(73, 73));
+    }
+    else {
+        CurMap.ClearTransparentEgg(TransparentEggSlot::Primary);
+    }
 }
 
 [[Event]]

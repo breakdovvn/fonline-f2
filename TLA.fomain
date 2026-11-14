@@ -307,7 +307,7 @@ Render.ModelDirectDraw = False
 Render.MapMaxElevation = 4096
 Render.EggEllipseWidthExt = 0
 Render.EggEllipseHeightExt = 0
-Render.EggTransparencyTransitionFactor = 0.9
+Render.EggTransparencyTransitionFactor = 0.0
 Render.AtlasLinearFiltration = True
 Render.DefaultParticleDrawWidth = 100
 Render.DefaultParticleDrawHeight = 100
@@ -434,7 +434,7 @@ WorldTime.StartYear = 2040
 [SubConfig]
 Name = Unpackaged
 Audio.MusicVolume = 0
-Render.RenderDebug = True
+Render.RenderDebug = False
 ServerNetwork.InactivityDisconnectTime = 0
 ServerNetwork.LoginTimeout = 0
 Timer.DeltaTimeCap = 100
