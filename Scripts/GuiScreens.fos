@@ -5212,20 +5212,20 @@ namespace Options
 {
     void SaveOptions()
     {
-        dict<string, string> savedOptions = {{"Language", "" + Settings.Client.Language},
-                                             {"ScreenWidth", "" + Settings.View.ScreenWidth},
-                                             {"ScreenHeight", "" + Settings.View.ScreenHeight},
-                                             {"FullScreen", "" + Settings.Render.Fullscreen},
-                                             {"AlwaysOnTop", "" + Settings.Render.AlwaysOnTop},
-                                             {"MusicVolume", "" + Settings.Audio.MusicVolume},
-                                             {"SoundVolume", "" + Settings.Audio.SoundVolume},
-                                             {"AlwaysRun", "" + Settings.Movement.AlwaysRun},
-                                             //{ "DefaultCombatMode", "" + Settings.DefaultCombatMode },
-                                             {"ProxyType", "" + Settings.ClientNetwork.ProxyType},
-                                             {"ProxyHost", "" + Settings.ClientNetwork.ProxyHost},
-                                             {"ProxyPort", "" + Settings.ClientNetwork.ProxyPort},
-                                             {"ProxyUser", "" + Settings.ClientNetwork.ProxyUser},
-                                             {"ProxyPass", "" + Settings.ClientNetwork.ProxyPass}};
+        dict<string, string> savedOptions = {{"Client.Language", "" + Settings.Client.Language},
+                                             {"View.ScreenWidth", "" + Settings.View.ScreenWidth},
+                                             {"View.ScreenHeight", "" + Settings.View.ScreenHeight},
+                                             {"Render.Fullscreen", "" + Settings.Render.Fullscreen},
+                                             {"Render.AlwaysOnTop", "" + Settings.Render.AlwaysOnTop},
+                                             {"Audio.MusicVolume", "" + Settings.Audio.MusicVolume},
+                                             {"Audio.SoundVolume", "" + Settings.Audio.SoundVolume},
+                                             {"Movement.AlwaysRun", "" + Settings.Movement.AlwaysRun},
+                                             {"Combat.CombatMessagesType", "" + Settings.Combat.CombatMessagesType},
+                                             {"ClientNetwork.ProxyType", "" + Settings.ClientNetwork.ProxyType},
+                                             {"ClientNetwork.ProxyHost", "" + Settings.ClientNetwork.ProxyHost},
+                                             {"ClientNetwork.ProxyPort", "" + Settings.ClientNetwork.ProxyPort},
+                                             {"ClientNetwork.ProxyUser", "" + Settings.ClientNetwork.ProxyUser},
+                                             {"ClientNetwork.ProxyPass", "" + Settings.ClientNetwork.ProxyPass}};
         Game.SetUserConfig(savedOptions);
     }
 
@@ -16399,6 +16399,8 @@ namespace Cursor
                     CursorMovePre.Draw(hexPos, isize(), 0, 0);
                 }
                 else {
+                    CursorMovePost.Draw(hexPos, isize(), 0, 0);
+                    CursorMovePre.Draw(hexPos, isize(), 0, 0);
                     CursorMoveX.Draw(hexPos, isize(), 0, 0);
                 }
             }

@@ -308,6 +308,8 @@
                     CursorMovePre.Draw(hexPos, isize(), 0, 0);
                 }
                 else {
+                    CursorMovePost.Draw(hexPos, isize(), 0, 0);
+                    CursorMovePre.Draw(hexPos, isize(), 0, 0);
                     CursorMoveX.Draw(hexPos, isize(), 0, 0);
                 }
             }
