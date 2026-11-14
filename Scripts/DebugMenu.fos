@@ -1168,7 +1168,7 @@ void ApplySkill(int actionId)
     }
 
     if (actionId == ActSkillMax || actionId == ActSkillAll) {
-        int all = actionId == ActSkillMax ? 200 : 100;
+        int all = actionId == ActSkillMax ? 300 : 100;
         SendCommand("setskills all " + all);
         return;
     }
