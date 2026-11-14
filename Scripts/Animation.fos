@@ -1191,9 +1191,16 @@ void PlayAnimSound(hstring modelName, int gender, CritterStateAnim stateAnim, Cr
     sound += " ";
     sound[sound.length() - 1] = abc[fActionAnim];
 
-    // "ha" -> "hm" / "hf" по полу
-    if (sound[0] == "h" && sound[1] == "a") {
-        sound[1] = (isFemale ? "f" : "m");
+    // "ha"/"hm" -> "hm" / "hf" по полу; мужской звук не трогаем, чтобы не менять рабочий путь.
+    if (sound[0] == "h") {
+        if (isFemale) {
+            if (sound[1] == "a" || sound[1] == "m" || sound[1] == "f") {
+                sound[1] = "f";
+            }
+        }
+        else if (sound[1] == "a") {
+            sound[1] = "m";
+        }
     }
 
     fileName = "sound/SFX/" + sound.upper() + ".ACM";
