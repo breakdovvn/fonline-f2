@@ -200,7 +200,8 @@
                 CurCrittersCountour = contour;
                 Critter[] critters = CurMap.GetCritters(CritterFindType::Any);
                 for (int i = 0; i < critters.length(); i++) {
-                    critters[i].Contour = CurCrittersCountour;
+                    // Трупы не подсвечиваем как врагов; при выключении контура сбрасываем и их.
+                    critters[i].Contour = (critters[i].IsDead() ? ZERO_UCOLOR : CurCrittersCountour);
                 }
             }
 

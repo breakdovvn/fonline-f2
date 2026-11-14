@@ -122,6 +122,11 @@ void OnRenderMapAfterSprites(Map map, irect drawArea)
             continue;
         }
 
+        // Труп не должен подсвечиваться как враг, даже если контур остался с момента смерти.
+        if (cr.IsDead()) {
+            continue;
+        }
+
         if (cr.MapId != map.Id) {
             continue;
         }
