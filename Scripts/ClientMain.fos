@@ -1256,10 +1256,12 @@ string ItemDescription(Item item, ItemLookTypes lookType)
         }
 
         if (lookType != ItemLookTypes::Map) {
-            // Вес
-            result += "\n" + Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrItemWeightGramm))),
-                                              "VALUE",
-                                              item.Weight * (item.Stackable ? item.Count : 1));
+            // Вес показываем только для предметов, которые можно поднять/носить в инвентаре.
+            if (item.IsCanPickUp) {
+                result += "\n" + Game.ReplaceText(Game.GetText(TextPackKey(TextPackName::Game, "" + (MsgStr::StrItemWeightGramm))),
+                                                  "VALUE",
+                                                  item.Weight * (item.Stackable ? item.Count : 1));
+            }
 
             // Заряд боеприпасов
             if (item.Type == ItemType::Weapon && item.Weapon_MaxAmmoCount > 0) {
