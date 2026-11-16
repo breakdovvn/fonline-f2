@@ -53,6 +53,13 @@ bool HandleHotkeys(KeyCode key)
     bool isHotkey = true;
     bool inputFocused = Gui::IsConsoleActive();
 
+    if (Game.SessionPaused) {
+        if (key == KeyCode::Pause && GameLoop::IsHost()) {
+            CurPlayer.ServerCall.TogglePause();
+        }
+        return true;
+    }
+
     if (!inputFocused) {
         Gui::Object[] focusedObjects = Gui::GetFocusedObjects();
         for (int i = 0; i < focusedObjects.length() && !inputFocused; i++) {
@@ -393,7 +400,7 @@ bool HandleHotkeys(KeyCode key)
 // на игровом экране без активной консоли.
 void HandlePressedKeys()
 {
-    bool isGameWithoutConsole = (Gui::IsScreenActive(GuiScreen::Game) && !Gui::IsConsoleActive());
+    bool isGameWithoutConsole = (Gui::IsScreenActive(GuiScreen::Game) && !Gui::IsConsoleActive() && !Game.SessionPaused);
     Settings.View.MapZoomInProgress = (isGameWithoutConsole && Input::IsCtrlDown());
     Settings.Hex.ScrollKeybLeft = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Left));
     Settings.Hex.ScrollKeybRight = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Right));

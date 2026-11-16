@@ -49,6 +49,10 @@
 
     void GameLMouseDown()
     {
+        if (Game.SessionPaused) {
+            return;
+        }
+
         // На глобальной карте CurMap отсутствует: без этой проверки клик даёт ScriptException.
         if (!HasChosen || !HasCurMap) {
             return;
@@ -208,6 +212,10 @@
 {
     {
         {
+            if (Game.SessionPaused) {
+                return;
+            }
+
             if (HasCurMap && Settings.View.MapZoomEnabled && Settings.View.MapZoomInProgress) {
                 if (button == MouseButton::WheelUp) {
                     CurMap.ChangeZoom(CurMap.SpritesZoom - 0.01);
@@ -235,6 +243,10 @@
 {
     {
         {
+            if (Game.SessionPaused) {
+                return;
+            }
+
             if (GetChild(0).FindMouseHit() == null) {
                 if (button == MouseButton::Left) {
                     GameLMouseUp();
@@ -264,6 +276,10 @@
 {
     {
         {
+            if (Game.SessionPaused) {
+                return;
+            }
+
             //Game.CustomCall( "ProcessMouseScroll" );
             if ((Settings.Render.Fullscreen && Settings.Hex.FullscreenMouseScroll) || (!Settings.Render.Fullscreen && Settings.Hex.WindowedMouseScroll)) {
                 Settings.Hex.ScrollMouseRight = (Game.MousePos.x >= Settings.View.ScreenWidth - 1);

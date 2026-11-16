@@ -261,6 +261,10 @@ void QuakeScreen(int noise, timespan time)
 [[Event]]
 void OnLoop()
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     ProcessQuake();
 }
 

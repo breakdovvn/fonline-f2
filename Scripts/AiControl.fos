@@ -189,6 +189,10 @@ void OnInfoMessage(EngineInfoMessage infoMessage, string extraText)
 [[Event]]
 void OnLoop()
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     if (!Settings.AiControl.Enabled || !Game.AiControlIsRunning()) {
         return;
     }

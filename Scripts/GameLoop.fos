@@ -18,6 +18,11 @@ void InitGameLoop()
     Game.OnPlayerLogin.Subscribe(OnPlayerLogin);
     Game.StartTimeEvent(Time::Milliseconds(0), Time::Milliseconds(100), OnTick);
 #endif
+
+#if CLIENT
+    Game.OnLoop.Subscribe(ClientLoop);
+    Game.OnPostRenderIface.Subscribe(RenderPauseOverlay);
+#endif
 }
 
 #if SERVER
@@ -45,7 +50,6 @@ bool IsHost(Player player)
 [[ServerRemoteCall]]
 void TogglePause(Player player)
 {
-    Game.Log("GAMELOOP pause request player=" + player.Id + " host=" + Game.SessionHostId + " paused=" + Game.SessionPaused);
     if (!IsHost(player)) {
         return;
     }
@@ -53,14 +57,12 @@ void TogglePause(Player player)
     if (Game.SessionPaused) {
         Game.SessionPaused = false;
         Game.SetGamePaused(false);
-        Messaging::Info(player, "Pause disabled");
         return;
     }
 
     Game.SessionPauseTime = Game.SynchronizedTime;
     Game.SessionPaused = true;
     Game.SetGamePaused(true);
-    Messaging::Info(player, "Pause enabled");
 }
 
 [[ServerRemoteCall]]
@@ -91,6 +93,71 @@ void OnTick()
 #endif
 
 #if CLIENT
+
+bool ClientPauseState = false;
+
+void DrawFilledRect(ipos pos, isize size, ucolor color)
+{
+    int packedColor = int(color.value);
+    int[] data = {pos.x, pos.y, packedColor, pos.x, pos.y + size.height, packedColor, pos.x + size.width, pos.y + size.height, packedColor,
+                  pos.x + size.width, pos.y + size.height, packedColor, pos.x + size.width, pos.y, packedColor, pos.x, pos.y, packedColor};
+
+    Game.DrawPrimitive(RenderPrimitiveType::TriangleList, data);
+}
+
+[[Event]]
+void RenderPauseOverlay()
+{
+    if (!Game.SessionPaused) {
+        return;
+    }
+
+    string text = MsgStr::GetGameText(MsgStr::STR_GAME_PAUSED);
+    isize textSize;
+    int lines = 0;
+    Game.GetTextInfo(text, isize(Settings.View.ScreenWidth, 1000), TextFormat(FontType::Big, FontFlag(0), 0), textSize, lines);
+
+    int boxWidth = textSize.width + 80;
+    int boxHeight = textSize.height + 40;
+    int x = (Settings.View.ScreenWidth - boxWidth) / 2;
+    int y = (Settings.View.ScreenHeight - boxHeight) / 2;
+
+    DrawFilledRect(ipos(x, y), isize(boxWidth, boxHeight), Color::Black);
+    Game.DrawText(text, ipos(x, y), isize(boxWidth, boxHeight), Color::White, TextFormat(FontType::Big, FontFlag(int(FontFlag::CenterX) | int(FontFlag::CenterY)), 0));
+}
+
+[[Event]]
+void ClientLoop()
+{
+    Game.SetGamePaused(Game.SessionPaused);
+
+    if (Game.SessionPaused != ClientPauseState) {
+        ClientPauseState = Game.SessionPaused;
+
+        if (ClientPauseState) {
+            TlaFixedDropMenu::SetDropMenuEnabled(false);
+            Settings.Hex.ScrollMouseLeft = false;
+            Settings.Hex.ScrollMouseRight = false;
+            Settings.Hex.ScrollMouseUp = false;
+            Settings.Hex.ScrollMouseDown = false;
+            Settings.Hex.ScrollKeybLeft = false;
+            Settings.Hex.ScrollKeybRight = false;
+            Settings.Hex.ScrollKeybUp = false;
+            Settings.Hex.ScrollKeybDown = false;
+            GuiScreensExt::GameCursor = CursorType::Default;
+            Gui::Cursor = CursorType::Default;
+        }
+        else {
+            TlaFixedDropMenu::SetDropMenuEnabled(true);
+            GuiScreensExt::GameCursor = CursorType::Move;
+            Gui::Cursor = CursorType::Move;
+        }
+    }
+
+    if (Game.SessionPaused) {
+        Gui::Cursor = CursorType::Default;
+    }
+}
 
 bool IsHost()
 {

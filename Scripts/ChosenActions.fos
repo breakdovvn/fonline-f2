@@ -45,6 +45,10 @@ int GetChosenActions(any[] & actions)
 
 void SetChosenActions(any[] actions)
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     ChosenActions.resize(0);
     verify(actions.length() % 7 == 0, "Assertion failed");
     ChosenActions = actions.clone();
@@ -52,6 +56,10 @@ void SetChosenActions(any[] actions)
 
 void SetAction(any[] action, bool append, bool toBeginning)
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     verify(action.length() == 7, "Assertion failed");
 
     if (!append) {
@@ -190,6 +198,10 @@ void UpdateTransparentCutout()
 [[Event]]
 void ChosenProcess()
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     UpdateTransparentCutout();
 
     if (!HasChosen) {

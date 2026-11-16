@@ -66,6 +66,10 @@ void InitMedia()
 [[Event]]
 void OnLoop()
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     if (!HasCurMap) {
         return;
     }

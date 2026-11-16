@@ -289,6 +289,11 @@ uint UnarmedAimSpriteId()
 [[Event]]
 void loop()
 {
+    if (Game.SessionPaused) {
+        Gui::EngineCallback_Loop();
+        return;
+    }
+
     CheckEquippedItemsChanged();
     ProcessPendingShowWeapon();
 

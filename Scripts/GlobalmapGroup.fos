@@ -32,6 +32,10 @@ void InitGlobalmapGroup()
 [[Event]]
 void OnLoop()
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     auto group = GetCurrentGroup();
     if (group.IsMoving) {
         if (!HasChosen || HasCurMap) {
@@ -1468,6 +1472,10 @@ bool CheckEntrance(Location loc, Critter[] arr, int entrance) // 5 hits
 
 void ProcessGlobalMapCommandImpl(Player player, int command, any param1, any param2)
 {
+    if (Game.SessionPaused) {
+        return;
+    }
+
     Critter? cl = player.GetControlledCritter();
     if (cl == null) {
         return;
