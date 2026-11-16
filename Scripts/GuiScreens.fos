@@ -3796,7 +3796,7 @@ namespace GlobalMap
         void OnConstruct() override
         {
             SetModal(true);
-            SetAnchor(AnchorStyle(AnchorStyle::Left | AnchorStyle::Top));
+            SetSize(800, 600);
             SetNotHittable(true);
         }
 
