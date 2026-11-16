@@ -1,0 +1,102 @@
+// GameLoop: server-authoritative base tick and host-controlled time.
+// 10 ticks per game second, 10 ticks per real second (Fallout 2 CE timing).
+namespace GameLoop
+{
+
+///@ Property Game Common ident SessionHostId Mutable PublicSync Persistent
+///@ Property Game Common bool SessionPaused Mutable PublicSync Persistent
+///@ Property Game Common int64 GameTicks Mutable PublicSync Persistent
+///@ Property Game Server synctime SessionPauseTime Mutable
+
+///@ RemoteCall Server TogglePause()
+///@ RemoteCall Server Sleep(int32 hours)
+
+[[ModuleInit]]
+void InitGameLoop()
+{
+#if SERVER
+    Game.OnPlayerLogin.Subscribe(OnPlayerLogin);
+    Game.StartTimeEvent(Time::Milliseconds(0), Time::Milliseconds(100), OnTick);
+#endif
+}
+
+#if SERVER
+
+// The first player to enter becomes the session host; in co-op this is the world creator.
+[[Event]]
+EventResult OnPlayerLogin(Player player, Player? unloginedPlayer)
+{
+    if (Game.SessionHostId == ZERO_IDENT) {
+        Game.SessionHostId = player.Id;
+        Game.Log("GAMELOOP host assigned player=" + player.Id);
+    }
+    else {
+        Game.Log("GAMELOOP login player=" + player.Id + " host=" + Game.SessionHostId);
+    }
+
+    return EventResult::ContinueChain;
+}
+
+bool IsHost(Player player)
+{
+    return Game.SessionHostId != ZERO_IDENT && Game.SessionHostId == player.Id;
+}
+
+[[ServerRemoteCall]]
+void TogglePause(Player player)
+{
+    Game.Log("GAMELOOP pause request player=" + player.Id + " host=" + Game.SessionHostId + " paused=" + Game.SessionPaused);
+    if (!IsHost(player)) {
+        return;
+    }
+
+    if (Game.SessionPaused) {
+        Game.SessionPaused = false;
+        Game.SetGamePaused(false);
+        Messaging::Info(player, "Pause disabled");
+        return;
+    }
+
+    Game.SessionPauseTime = Game.SynchronizedTime;
+    Game.SessionPaused = true;
+    Game.SetGamePaused(true);
+    Messaging::Info(player, "Pause enabled");
+}
+
+[[ServerRemoteCall]]
+void Sleep(Player player, int hours)
+{
+    Game.Log("GAMELOOP sleep request player=" + player.Id + " hours=" + hours);
+    if (!IsHost(player) || Game.SessionPaused || hours <= 0) {
+        return;
+    }
+
+    Game.SetSynchronizedTime(Game.SynchronizedTime + Time::Hours(hours));
+    Game.GameTicks += hours * 36000;
+    Messaging::Info(player, "Slept " + hours + " hours");
+}
+
+[[TimeEvent]]
+void OnTick()
+{
+    if (Game.SessionPaused) {
+        Game.SetSynchronizedTime(Game.SessionPauseTime);
+        return;
+    }
+
+    // 10 ticks = 1 game second, 10 ticks per real second => 1:1 with real time.
+    Game.GameTicks += 1;
+}
+
+#endif
+
+#if CLIENT
+
+bool IsHost()
+{
+    return Game.SessionHostId != ZERO_IDENT && Game.SessionHostId == CurPlayer.Id;
+}
+
+#endif
+
+}

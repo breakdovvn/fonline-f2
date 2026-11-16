@@ -164,6 +164,16 @@ bool HandleHotkeys(KeyCode key)
             else if (key == KeyCode::P && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
                 Gui::ShowScreen(GuiScreen::PipBoy);
             }
+            else if (key == KeyCode::Pause && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
+                if (GameLoop::IsHost()) {
+                    CurPlayer.ServerCall.TogglePause();
+                }
+            }
+            else if (key == KeyCode::Z && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
+                if (GameLoop::IsHost()) {
+                    CurPlayer.ServerCall.Sleep(8);
+                }
+            }
             else if (key == KeyCode::F && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
                 Gui::ShowScreen(GuiScreen::FixBoy);
             }
@@ -384,7 +394,7 @@ bool HandleHotkeys(KeyCode key)
 void HandlePressedKeys()
 {
     bool isGameWithoutConsole = (Gui::IsScreenActive(GuiScreen::Game) && !Gui::IsConsoleActive());
-    Settings.View.MapZoomInProgress = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Z));
+    Settings.View.MapZoomInProgress = (isGameWithoutConsole && Input::IsCtrlDown());
     Settings.Hex.ScrollKeybLeft = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Left));
     Settings.Hex.ScrollKeybRight = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Right));
     Settings.Hex.ScrollKeybUp = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Up));

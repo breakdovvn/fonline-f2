@@ -424,8 +424,8 @@ Web.MinHeight = 768
 Web.MaxWidth = 1920
 Web.MaxHeight = 1080
 
-WorldTime.Multiplier = 20
-WorldTime.StartYear = 2040
+WorldTime.Multiplier = 1
+WorldTime.StartYear = 2241
 
 #
 # Sub configs
