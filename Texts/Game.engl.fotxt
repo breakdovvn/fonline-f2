@@ -2716,3 +2716,21 @@ Hello world!
 {CraftItem}{94}{Несколько труб небольшого диаметра, распиленных на 19 одинаковых отрезков, и подведённые к каждому из них электрозапалы по схеме из "Пушек и пуль". Для производства необходим верстак.}
 {CraftItem}{95}{Используйте 7 стволов от G11 для того, чтобы собрать самодельный пулемёт по схеме "Metalstorm", с продольным заряжанием безгильзовой аммуниции в ствол и активации её при помощи электрического запала. Придётся немного попаять. Для производства необходим верстак.}
 {UnarmedAimed}{}{aimed}
+{PipRestTitle}{}{ALARM CLOCK}
+{PipRestHealth}{}{Health}
+{PipRest10Minutes}{}{Rest for ten minutes}
+{PipRest30Minutes}{}{Rest for thirty minutes}
+{PipRest1Hour}{}{Rest for one hour}
+{PipRest2Hours}{}{Rest for two hours}
+{PipRest3Hours}{}{Rest for three hours}
+{PipRest4Hours}{}{Rest for four hours}
+{PipRest5Hours}{}{Rest for five hours}
+{PipRest6Hours}{}{Rest for six hours}
+{PipRestMorning}{}{Rest until morning (08:00)}
+{PipRestNoon}{}{Rest until noon (12:00)}
+{PipRestEvening}{}{Rest until evening (18:00)}
+{PipRestMidnight}{}{Rest until midnight (0:00)}
+{PipRestHealed}{}{Rest until healed}
+{PipRestDone}{}{You have woken up.}
+{PipRestFullHealth}{}{You are already in full health.}
+{PipRestCombat}{}{You cannot rest while in combat.}

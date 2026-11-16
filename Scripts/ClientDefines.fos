@@ -11,6 +11,7 @@ namespace ClientDefines
 ///@ Enum CursorType UseWeapon = 3
 ///@ Enum CursorType UseSkill = 4
 ///@ Enum CursorType Hand = 5
+///@ Enum CursorType Wait = 6
 
 ///@ Setting Client int32 Combat.CombatMessagesType
 

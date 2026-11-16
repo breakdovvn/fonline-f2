@@ -28,7 +28,7 @@ void InitMapTime()
 #endif
 
     UpdateDateTimeImpl();
-    Game.StartTimeEvent(Time::Asap(), Time::Milliseconds(100), UpdateDateTime);
+    Game.StartTimeEvent(Time::Asap(), Time::Milliseconds(50), UpdateDateTime);
 }
 
 // Пересчитывает текущее игровое время: берёт точку отсчёта (стартовый год, 30 октября),
@@ -42,7 +42,13 @@ void UpdateDateTimeImpl()
     // Ускоренное игровое время = реальное прошедшее время * множитель мира.
     // Собираем timespan напрямую из int64: Time::Milliseconds принимает int32, и произведение
     // переполнялось примерно через 30 часов аптайма, отматывая календарь назад на ~49.7 дней
-    time += timespan(Game.GameTicks * 100, Time::MillisecondsPlace);
+    int64 ticks = Game.GameTicks;
+#if CLIENT
+    if (HasChosen && Chosen.Sleeping && GameLoop::SleepDisplayTicks > ticks) {
+        ticks = GameLoop::SleepDisplayTicks;
+    }
+#endif
+    time += timespan(ticks * 100, Time::MillisecondsPlace);
 
     int year = 0;
     int month = 0;

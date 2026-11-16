@@ -105,7 +105,8 @@
         {
             CursorDefault = Sprite::Sprite("art/intrface/cursor_default.png");
             CursorHand = Sprite::Sprite("art/intrface/cursor_hand.png");
-            CursorWait = Sprite::Sprite("art/intrface/cursor_wait.png");
+            CursorWait = Sprite::Sprite("art/intrface/wait2.frm");
+            CursorWait.Play(true);
             CursorAttack = Sprite::Sprite("art/intrface/cursor_attack.png");
             CursorUseItem = Sprite::Sprite("art/intrface/cursor_use_item.png");
             CursorUseSkill = Sprite::Sprite("art/intrface/cursor_use_skill.png");
@@ -319,6 +320,9 @@
             else if (cursor == CursorType::Hand) {
                 //Game.CustomCall( "CurDrawHand" );
                 CursorHand.Draw(Game.MousePos, isize(), -1, -1);
+            }
+            else if (cursor == CursorType::Wait) {
+                CursorWait.Draw(Game.MousePos, isize(), -1, -1);
             }
             else {
                 CursorDefault.Draw(Game.MousePos, isize(), -1, -1);

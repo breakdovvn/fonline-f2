@@ -103,18 +103,8 @@ void DropPoison(Critter cr)
     }
 }
 
-[[TimeEvent]]
-void Poison(Critter cr, TimeEventContext event)
+void ProcessPoisonTick(Critter cr)
 {
-    if (cr.IsDead()) {
-        timespan delayTicks = Time::Seconds(100);
-        if (delayTicks != ZERO_TIMESPAN) {
-            event.Repeat(delayTicks);
-        }
-
-        return;
-    }
-
     int levelVal = cr.PoisoningLevel;
     if (levelVal > 0) {
         Messaging::Info(cr, TextPackKey(TextPackName::Game, "" + (STR_POISON_PROCESS)));
@@ -130,13 +120,56 @@ void Poison(Critter cr, TimeEventContext event)
         if (cr.IsPoisoned) {
             cr.IsPoisoned = false;
         }
+    }
+}
 
+[[TimeEvent]]
+void Poison(Critter cr, TimeEventContext event)
+{
+    if (cr.IsDead()) {
+        timespan delayTicks = Time::Seconds(100);
+        if (delayTicks != ZERO_TIMESPAN) {
+            event.Repeat(delayTicks);
+        }
+
+        return;
+    }
+
+    ProcessPoisonTick(cr);
+    if (cr.PoisoningLevel == 0) {
         return;
     }
 
     timespan delayTicks = GetPoisonDuration(cr);
     if (delayTicks != ZERO_TIMESPAN) {
         event.Repeat(delayTicks);
+    }
+}
+
+void AdvanceForSleep(Critter cr, int minutes)
+{
+    if (cr.IsDead() || minutes <= 0) {
+        return;
+    }
+
+    int remaining = minutes * 60;
+    while (remaining > 0 && cr.PoisoningLevel > 0 && !cr.IsDead()) {
+        int interval = GetPoisonDuration(cr).seconds;
+        if (interval <= 0) {
+            interval = 1;
+        }
+
+        if (interval > remaining) {
+            break;
+        }
+
+        remaining -= interval;
+        ProcessPoisonTick(cr);
+    }
+
+    cr.StopTimeEvent(Poison);
+    if (cr.PoisoningLevel > 0 && !cr.IsDead()) {
+        cr.StartTimeEvent(GetPoisonDuration(cr), Poison);
     }
 }
 

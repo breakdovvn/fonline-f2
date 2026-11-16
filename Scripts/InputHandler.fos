@@ -60,6 +60,10 @@ bool HandleHotkeys(KeyCode key)
         return true;
     }
 
+    if (HasChosen && Chosen.Sleeping) {
+        return true;
+    }
+
     if (!inputFocused) {
         Gui::Object[] focusedObjects = Gui::GetFocusedObjects();
         for (int i = 0; i < focusedObjects.length() && !inputFocused; i++) {
@@ -177,9 +181,7 @@ bool HandleHotkeys(KeyCode key)
                 }
             }
             else if (key == KeyCode::Z && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
-                if (GameLoop::IsHost()) {
-                    CurPlayer.ServerCall.Sleep(8);
-                }
+                GuiScreensExt::OpenPipBoyRest();
             }
             else if (key == KeyCode::F && (screen.Num == GuiScreen::Game || screen.Num == GuiScreen::GlobalMap)) {
                 Gui::ShowScreen(GuiScreen::FixBoy);
@@ -400,7 +402,8 @@ bool HandleHotkeys(KeyCode key)
 // на игровом экране без активной консоли.
 void HandlePressedKeys()
 {
-    bool isGameWithoutConsole = (Gui::IsScreenActive(GuiScreen::Game) && !Gui::IsConsoleActive() && !Game.SessionPaused);
+    bool isGameWithoutConsole = (Gui::IsScreenActive(GuiScreen::Game) && !Gui::IsConsoleActive() && !Game.SessionPaused &&
+                                 !(HasChosen && Chosen.Sleeping));
     Settings.View.MapZoomInProgress = (isGameWithoutConsole && Input::IsCtrlDown());
     Settings.Hex.ScrollKeybLeft = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Left));
     Settings.Hex.ScrollKeybRight = (isGameWithoutConsole && Input::IsKeyPressed(KeyCode::Right));

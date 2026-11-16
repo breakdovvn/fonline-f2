@@ -265,6 +265,7 @@ class ActiveDrugEffect
     int Stage;
     int Flags;
     int TimeEventId;
+    int DurationMinutes;
 }
 
 // Рантайм-реестр активных эффектов по криттерам (не персистентный, живёт в памяти сервера).
@@ -334,6 +335,7 @@ int CreateActiveDrugEffect(Critter cr, hstring protoId, int flags)
     effect.DrugProtoId = protoId;
     effect.Stage = 0;
     effect.Flags = flags;
+    effect.DurationMinutes = 0;
     effects.insertLast(effect);
     LastDrugEffectId = effect.Id;
 
@@ -680,6 +682,7 @@ timespan ProcessDrug(Critter cr, int effectId)
 
     stage++;
     effect.Stage = stage;
+    effect.DurationMinutes = duration;
     // Значения длительности в таблице заданы в ИГРОВЫХ минутах, а не в реальных секундах:
     // с Time::Seconds все стадии/привыкания шли примерно в 3 раза быстрее задуманного
     return Time::GameMinutes(duration);
@@ -687,6 +690,63 @@ timespan ProcessDrug(Critter cr, int effectId)
 
 // Откат изменений свойств от уже сработавших стадий препарата (например, при снятии Jet антидотом).
 // HP/яд/радиация не откатываются — снимаются только наложенные эффекты-баффы.
+void AdvanceForSleep(Critter cr, int minutes)
+{
+    if (cr.IsDead() || minutes <= 0) {
+        return;
+    }
+
+    ActiveDrugEffect[]? effects = AllActiveDrugEffects.get(cr.Id, null);
+    if (effects == null || effects.isEmpty()) {
+        return;
+    }
+
+    for (int i = 0; i < effects.length(); i++) {
+        int effectId = effects[i].Id;
+        int remaining = minutes;
+        ActiveDrugEffect? effect = GetActiveDrugEffect(cr, effectId);
+
+        while (remaining > 0 && !cr.IsDead()) {
+            if (effect == null) {
+                break;
+            }
+
+            if (effect.DrugProtoId == Content::Item::jet && effect.Stage >= 4) {
+                break;
+            }
+
+            int duration = effect.DurationMinutes;
+            if (duration <= 0) {
+                ProcessDrug(cr, effectId);
+                effect = GetActiveDrugEffect(cr, effectId);
+                if (effect == null || effect.Stage > 4) {
+                    break;
+                }
+
+                continue;
+            }
+
+            if (remaining < duration) {
+                effect.DurationMinutes = duration - remaining;
+                remaining = 0;
+                break;
+            }
+
+            remaining -= duration;
+            ProcessDrug(cr, effectId);
+            effect = GetActiveDrugEffect(cr, effectId);
+        }
+
+        if (effect != null && effect.Stage <= 4 && effect.DurationMinutes > 0) {
+            cr.StopTimeEvent(effect.TimeEventId);
+            effect.TimeEventId = cr.StartTimeEvent(Time::GameMinutes(effect.DurationMinutes), Drug, {effect.Id});
+        }
+        else if (effect != null) {
+            cr.StopTimeEvent(effect.TimeEventId);
+        }
+    }
+}
+
 void DropDrug(Critter cr, hstring drugPid, int& stage)
 {
     if (stage == 0 || stage == 3) {

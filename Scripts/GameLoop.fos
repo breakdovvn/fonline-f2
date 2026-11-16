@@ -8,8 +8,16 @@ namespace GameLoop
 ///@ Property Game Common int64 GameTicks Mutable PublicSync Persistent
 ///@ Property Game Server synctime SessionPauseTime Mutable
 
+///@ Property Critter Common bool Sleeping Mutable OwnerSync
+///@ Property Critter Server int32 SleepMinutesLeft Mutable
+///@ Property Critter Server int32 SleepTotalMinutes Mutable
+///@ Property Critter Server int32 SleepChunkMinutes Mutable
+///@ Property Critter Server int32 SleepHealMinutes Mutable
+///@ Property Critter Server nanotime SleepStartTime Mutable
+///@ Property Critter Common int64 SleepTargetTicks Mutable OwnerSync
+
 ///@ RemoteCall Server TogglePause()
-///@ RemoteCall Server Sleep(int32 hours)
+///@ RemoteCall Server Sleep(int32 mode)
 
 [[ModuleInit]]
 void InitGameLoop()
@@ -65,17 +73,168 @@ void TogglePause(Player player)
     Game.SetGamePaused(true);
 }
 
-[[ServerRemoteCall]]
-void Sleep(Player player, int hours)
+int SleepUntilHour(int nowMinutes, int targetMinutes)
 {
-    Game.Log("GAMELOOP sleep request player=" + player.Id + " hours=" + hours);
-    if (!IsHost(player) || Game.SessionPaused || hours <= 0) {
+    int minutes = targetMinutes - nowMinutes;
+    if (minutes <= 0) {
+        minutes += 1440;
+    }
+
+    return minutes;
+}
+
+int SleepModeMinutes(Critter cr, int mode)
+{
+    switch (mode) {
+    case 0:
+        return 10;
+    case 1:
+        return 30;
+    case 2:
+        return 60;
+    case 3:
+        return 120;
+    case 4:
+        return 180;
+    case 5:
+        return 240;
+    case 6:
+        return 300;
+    case 7:
+        return 360;
+    case 8:
+        return SleepUntilHour(Game.Hour * 60 + Game.Minute, 8 * 60);
+    case 9:
+        return SleepUntilHour(Game.Hour * 60 + Game.Minute, 12 * 60);
+    case 10:
+        return SleepUntilHour(Game.Hour * 60 + Game.Minute, 18 * 60);
+    case 11:
+        return SleepUntilHour(Game.Hour * 60 + Game.Minute, 0);
+    case 12: {
+        int missing = cr.MaxLife - cr.CurrentHp;
+        int rate = Math::Max(1, cr.HealingRate);
+        int periods = (missing + rate - 1) / rate;
+        return periods * 180;
+    }
+    default:
+        return 0;
+    }
+}
+
+void HealDuringSleep(Critter cr, int minutes)
+{
+    if (cr.IsDead() || cr.IsNoHeal) {
         return;
     }
 
-    Game.SetSynchronizedTime(Game.SynchronizedTime + Time::Hours(hours));
-    Game.GameTicks += hours * 36000;
-    Messaging::Info(player, "Slept " + hours + " hours");
+    cr.SleepHealMinutes += minutes;
+    while (cr.SleepHealMinutes >= 180 && cr.CurrentHp < cr.MaxLife) {
+        cr.SleepHealMinutes -= 180;
+        cr.CurrentHp = Math::Min(cr.MaxLife, cr.CurrentHp + Math::Max(1, cr.HealingRate));
+    }
+
+    if (cr.CurrentHp >= cr.MaxLife) {
+        cr.SleepHealMinutes = 0;
+    }
+}
+
+void FinishSleep(Critter cr)
+{
+    cr.Sleeping = false;
+    cr.SleepMinutesLeft = 0;
+    cr.SleepTotalMinutes = 0;
+    cr.SleepChunkMinutes = 0;
+    cr.SleepHealMinutes = 0;
+    cr.SleepStartTime = ZERO_NANOTIME;
+}
+
+[[TimeEvent]]
+void SleepTick(Critter cr, TimeEventContext event)
+{
+    if (!cr.Sleeping) {
+        return;
+    }
+
+    if (cr.IsDead() || Time::IsTimeoutActive(cr.TimeoutBattle)) {
+        FinishSleep(cr);
+        return;
+    }
+
+    // Двигаем сон по реально прошедшему времени, чтобы задержки планировщика
+    // не растягивали анимацию и сервер не отставал от клиентских часов.
+    int64 elapsedMs = int64((Game.FrameTime - cr.SleepStartTime).milliseconds);
+    if (elapsedMs < 0) {
+        elapsedMs = 0;
+    }
+
+    int done = cr.SleepTotalMinutes - cr.SleepMinutesLeft;
+    int targetDone = int(Math::Min(int64(cr.SleepTotalMinutes), elapsedMs * 3 / 10));
+    int chunk = targetDone - done;
+
+    while (chunk > 0 && !cr.IsDead()) {
+        int step = Math::Min(chunk, Math::Max(1, cr.SleepChunkMinutes));
+        Game.GameTicks += int64(step) * 600;
+        Game.SetSynchronizedTime(Game.SynchronizedTime + Time::Minutes(step));
+
+        Poison::AdvanceForSleep(cr, step);
+        Drugs::AdvanceForSleep(cr, step);
+        HealDuringSleep(cr, step);
+
+        cr.SleepMinutesLeft -= step;
+        chunk -= step;
+    }
+
+    if (cr.IsDead() || cr.SleepMinutesLeft <= 0) {
+        FinishSleep(cr);
+        return;
+    }
+
+    // Последний шаг планируем точно на момент достижения цели, чтобы часы
+    // и сервер завершили сон одновременно.
+    if (cr.SleepMinutesLeft <= cr.SleepChunkMinutes) {
+        int64 finishMs = int64(cr.SleepTotalMinutes) * 10 / 3;
+        int64 waitMs = finishMs - elapsedMs;
+        if (waitMs < 1) {
+            waitMs = 1;
+        }
+        event.Repeat(Time::Milliseconds(int(waitMs)));
+        return;
+    }
+
+    event.Repeat(Time::Milliseconds(50));
+}
+
+[[ServerRemoteCall]]
+void Sleep(Player player, int mode)
+{
+    if (!IsHost(player) || Game.SessionPaused) {
+        return;
+    }
+
+    Critter? cr = player.GetControlledCritter();
+    if (cr == null || cr.IsDead() || cr.Sleeping) {
+        return;
+    }
+
+    if (Time::IsTimeoutActive(cr.TimeoutBattle)) {
+        Messaging::Info(cr, TextPackKey(TextPackName::Game, "PipRestCombat"));
+        return;
+    }
+
+    int minutes = SleepModeMinutes(cr, mode);
+    if (minutes <= 0) {
+        Messaging::Info(cr, TextPackKey(TextPackName::Game, "PipRestFullHealth"));
+        return;
+    }
+
+    cr.SleepChunkMinutes = 15;
+    cr.SleepMinutesLeft = minutes;
+    cr.SleepTotalMinutes = minutes;
+    cr.SleepHealMinutes = 0;
+    cr.SleepStartTime = Game.FrameTime;
+    cr.SleepTargetTicks = Game.GameTicks + int64(minutes) * 600;
+    cr.Sleeping = true;
+    cr.StartTimeEvent(Time::Asap(), SleepTick);
 }
 
 [[TimeEvent]]
@@ -95,6 +254,9 @@ void OnTick()
 #if CLIENT
 
 bool ClientPauseState = false;
+bool ClientSleepState = false;
+int64 SleepDisplayTicks = 0;
+nanotime SleepDisplayLastTime = ZERO_NANOTIME;
 
 void DrawFilledRect(ipos pos, isize size, ucolor color)
 {
@@ -152,6 +314,48 @@ void ClientLoop()
             GuiScreensExt::GameCursor = CursorType::Move;
             Gui::Cursor = CursorType::Move;
         }
+    }
+
+    bool sleeping = HasChosen && Chosen.Sleeping;
+    if (sleeping && !ClientSleepState) {
+        SleepDisplayTicks = Game.GameTicks;
+        SleepDisplayLastTime = Game.FrameTime;
+    }
+
+    if (sleeping) {
+        int64 frameMs = int64((Game.FrameTime - SleepDisplayLastTime).milliseconds);
+        SleepDisplayLastTime = Game.FrameTime;
+        if (frameMs < 0) {
+            frameMs = 0;
+        }
+
+        SleepDisplayTicks += frameMs * 180;
+
+        // Сервер двигает время кусками по 15 минут, поэтому отставание догоняем
+        // с ограниченной скоростью, а не скачком.
+        if (SleepDisplayTicks < Game.GameTicks) {
+            int64 gap = Game.GameTicks - SleepDisplayTicks;
+            int64 catchUp = frameMs * 360;
+            if (catchUp < 1) {
+                catchUp = 1;
+            }
+            if (catchUp > gap) {
+                catchUp = gap;
+            }
+            SleepDisplayTicks += catchUp;
+        }
+
+        if (Chosen.SleepTargetTicks > 0 && SleepDisplayTicks > Chosen.SleepTargetTicks) {
+            SleepDisplayTicks = Chosen.SleepTargetTicks;
+        }
+
+        Gui::Cursor = CursorType::Wait;
+        MapTime::UpdateDateTimeImpl();
+    }
+
+    if (sleeping != ClientSleepState) {
+        ClientSleepState = sleeping;
+        Gui::Cursor = sleeping ? CursorType::Wait : CursorType::Default;
     }
 
     if (Game.SessionPaused) {

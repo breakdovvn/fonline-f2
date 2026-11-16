@@ -7083,9 +7083,6 @@ namespace Inventory
             SetPosition(155, 287);
             SetSize(90, 60);
             SetDraggable(true);
-            // Прозрачная заглушка вместо dummy.png (зелёный крестик): пустой слот экипировки
-            // рисуется прототипом ячейки и не должен показывать крест. Картинка предмета
-            // подгружается поверх в OnDrawItem.
             SetBackgroundImage("art/intrface/none.png", SpriteLayout::Zoom);
         }
 
@@ -10538,14 +10535,58 @@ namespace PipBoy
         Archives,
         Text,
         MapPanel,
+        Rest,
     }
 
     MenuMode CurMenu;
     DescText CurText;
+    Sprite::Sprite RestBell = Sprite::Sprite();
+    Sprite::Sprite RestBellPressed = Sprite::Sprite();
+    string[] RestKeys = {
+        "PipRest10Minutes",
+        "PipRest30Minutes",
+        "PipRest1Hour",
+        "PipRest2Hours",
+        "PipRest3Hours",
+        "PipRest4Hours",
+        "PipRest5Hours",
+        "PipRest6Hours",
+        "PipRestMorning",
+        "PipRestNoon",
+        "PipRestEvening",
+        "PipRestMidnight",
+        "PipRestHealed",
+    };
 
     string FormatXX(int val)
     {
         return val < 10 ? "0" + val : "" + val;
+    }
+
+    void DrawRestMenu(Gui::Panel panel)
+    {
+        int px = panel.AbsolutePos.x;
+        int py = panel.AbsolutePos.y;
+        int width = panel.Size.width;
+
+        string title = Game.GetText(TextPackKey(TextPackName::Game, "PipRestTitle"));
+        Game.DrawText(title, ipos(px, py + 10), isize(width, 16), Color::Green, TextFormat(FontType::Default, FontFlag(int(FontFlag::CenterX)), 0));
+
+        string health = Game.GetText(TextPackKey(TextPackName::Game, "PipRestHealth")) + " " + Chosen.CurrentHp + "/" + Chosen.MaxLife;
+        Game.DrawText(health, ipos(px, py + 30), isize(width, 16), Color::Green, TextFormat(FontType::Default, FontFlag(int(FontFlag::CenterX)), 0));
+
+        ipos mouse = Game.MousePos;
+
+        for (int i = 0; i < RestKeys.length(); i++) {
+            int lineY = py + 62 + i * 20;
+            bool hover = mouse.x >= px + 40 && mouse.x <= px + width - 20 && mouse.y >= lineY && mouse.y < lineY + 20;
+            string text = Game.GetText(TextPackKey(TextPackName::Game, RestKeys[i]));
+            Game.DrawText(text,
+                          ipos(px + 40, lineY),
+                          isize(width - 80, 20),
+                          hover ? Color::White : Color::Green,
+                          TextFormat(FontType::Default, FontFlag(0), 0));
+        }
     }
 
     class PipBoy : Gui::Screen
@@ -10581,6 +10622,33 @@ namespace PipBoy
             ::GuiScreensExt::NeedObject(Find("ArchivesPanel")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::Archives);
             ::GuiScreensExt::NeedObject(Find("DescText")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::Text);
             ::GuiScreensExt::NeedObject(Find("DrawMapPanel")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::MapPanel);
+
+            if (CurMenu == ::GuiScreens::PipBoy::MenuMode::Rest) {
+                DrawRestMenu(this);
+            }
+        }
+
+        void OnLMouseClick() override
+        {
+            if (CurMenu != ::GuiScreens::PipBoy::MenuMode::Rest) {
+                return;
+            }
+
+            if (HasChosen && Chosen.Sleeping) {
+                return;
+            }
+
+            ipos mouse = Game.MousePos;
+            int line = (mouse.y - (AbsolutePos.y + 62)) / 20;
+            if (line < 0 || line >= RestKeys.length()) {
+                return;
+            }
+
+            if (mouse.x < AbsolutePos.x + 40 || mouse.x > AbsolutePos.x + Size.width - 20) {
+                return;
+            }
+
+            CurPlayer.ServerCall.Sleep(line);
         }
     };
 
@@ -11217,8 +11285,39 @@ namespace PipBoy
     {
         void OnConstruct() override
         {
+            SetHasOnDraw(true);
             SetPosition(20, 12);
             SetSize(185, 23);
+        }
+
+        void OnShow(dict<string, any> params) override
+        {
+            RestBell.Load("art/intrface/ALARMOUT.FRM");
+            RestBellPressed.Load("art/intrface/ALARMIN.FRM");
+        }
+
+        void OnDraw() override
+        {
+            bool pressed = (Game.MousePos.x >= AbsolutePos.x + 104 && Game.MousePos.x <= AbsolutePos.x + 131 && Game.MousePos.y >= AbsolutePos.y + 1 &&
+                            Game.MousePos.y <= AbsolutePos.y + 23 && Input::IsMousePressed(MouseButton::Left));
+            if (pressed) {
+                RestBellPressed.Draw(ipos(AbsolutePos.x + 104, AbsolutePos.y + 1));
+            }
+            else {
+                RestBell.Draw(ipos(AbsolutePos.x + 104, AbsolutePos.y + 1));
+            }
+        }
+
+        void OnLMouseClick() override
+        {
+            if (HasChosen && Chosen.Sleeping) {
+                return;
+            }
+
+            if (Game.MousePos.x >= AbsolutePos.x + 104 && Game.MousePos.x <= AbsolutePos.x + 131 && Game.MousePos.y >= AbsolutePos.y + 1 &&
+                Game.MousePos.y <= AbsolutePos.y + 23) {
+                CurMenu = ::GuiScreens::PipBoy::MenuMode::Rest;
+            }
         }
     };
 
@@ -16219,7 +16318,8 @@ namespace Cursor
         {
             CursorDefault = Sprite::Sprite("art/intrface/cursor_default.png");
             CursorHand = Sprite::Sprite("art/intrface/cursor_hand.png");
-            CursorWait = Sprite::Sprite("art/intrface/cursor_wait.png");
+            CursorWait = Sprite::Sprite("art/intrface/wait2.frm");
+            CursorWait.Play(true);
             CursorAttack = Sprite::Sprite("art/intrface/cursor_attack.png");
             CursorUseItem = Sprite::Sprite("art/intrface/cursor_use_item.png");
             CursorUseSkill = Sprite::Sprite("art/intrface/cursor_use_skill.png");
@@ -16426,6 +16526,9 @@ namespace Cursor
             else if (cursor == CursorType::Hand) {
                 //Game.CustomCall( "CurDrawHand" );
                 CursorHand.Draw(Game.MousePos, isize(), -1, -1);
+            }
+            else if (cursor == CursorType::Wait) {
+                CursorWait.Draw(Game.MousePos, isize(), -1, -1);
             }
             else {
                 CursorDefault.Draw(Game.MousePos, isize(), -1, -1);

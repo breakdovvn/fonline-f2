@@ -33,14 +33,66 @@
         Archives,
         Text,
         MapPanel,
+        Rest,
     }
 
     MenuMode CurMenu;
     DescText CurText;
+    Sprite::Sprite RestBell = Sprite::Sprite();
+    Sprite::Sprite RestBellPressed = Sprite::Sprite();
+    string[] RestKeys = {
+        "PipRest10Minutes",
+        "PipRest30Minutes",
+        "PipRest1Hour",
+        "PipRest2Hours",
+        "PipRest3Hours",
+        "PipRest4Hours",
+        "PipRest5Hours",
+        "PipRest6Hours",
+        "PipRestMorning",
+        "PipRestNoon",
+        "PipRestEvening",
+        "PipRestMidnight",
+        "PipRestHealed",
+    };
 
     string FormatXX(int val)
     {
         return val < 10 ? "0" + val : "" + val;
+    }
+
+    void DrawRestMenu(Gui::Panel panel)
+    {
+        int px = panel.AbsolutePos.x;
+        int py = panel.AbsolutePos.y;
+        int width = panel.Size.width;
+
+        string title = Game.GetText(TextPackKey(TextPackName::Game, "PipRestTitle"));
+        Game.DrawText(title,
+                      ipos(px, py + 10),
+                      isize(width, 16),
+                      Color::Green,
+                      TextFormat(FontType::Default, FontFlag(int(FontFlag::CenterX)), 0));
+
+        string health = Game.GetText(TextPackKey(TextPackName::Game, "PipRestHealth")) + " " + Chosen.CurrentHp + "/" + Chosen.MaxLife;
+        Game.DrawText(health,
+                      ipos(px, py + 30),
+                      isize(width, 16),
+                      Color::Green,
+                      TextFormat(FontType::Default, FontFlag(int(FontFlag::CenterX)), 0));
+
+        ipos mouse = Game.MousePos;
+
+        for (int i = 0; i < RestKeys.length(); i++) {
+            int lineY = py + 62 + i * 20;
+            bool hover = mouse.x >= px + 40 && mouse.x <= px + width - 20 && mouse.y >= lineY && mouse.y < lineY + 20;
+            string text = Game.GetText(TextPackKey(TextPackName::Game, RestKeys[i]));
+            Game.DrawText(text,
+                          ipos(px + 40, lineY),
+                          isize(width - 80, 20),
+                          hover ? Color::White : Color::Green,
+                          TextFormat(FontType::Default, FontFlag(0), 0));
+        }
     }
 }
 //   "ClassFields": null,
@@ -123,6 +175,10 @@
             ::GuiScreensExt::NeedObject(Find("ArchivesPanel")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::Archives);
             ::GuiScreensExt::NeedObject(Find("DescText")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::Text);
             ::GuiScreensExt::NeedObject(Find("DrawMapPanel")).SetActive(CurMenu == ::GuiScreens::PipBoy::MenuMode::MapPanel);
+
+            if (CurMenu == ::GuiScreens::PipBoy::MenuMode::Rest) {
+                DrawRestMenu(this);
+            }
         }
     }
 }
@@ -134,7 +190,32 @@
 //       "OnLMousePressed": null,
 //       "OnRMousePressed": null,
 //       "OnMouseClick": null,
-//       "OnLMouseClick": null,
+//       "OnLMouseClick":
+{
+    {
+        {
+            if (CurMenu != ::GuiScreens::PipBoy::MenuMode::Rest) {
+                return;
+            }
+
+            if (HasChosen && Chosen.Sleeping) {
+                return;
+            }
+
+            ipos mouse = Game.MousePos;
+            int line = (mouse.y - (AbsolutePos.y + 62)) / 20;
+            if (line < 0 || line >= RestKeys.length()) {
+                return;
+            }
+
+            if (mouse.x < AbsolutePos.x + 40 || mouse.x > AbsolutePos.x + Size.width - 20) {
+                return;
+            }
+
+            CurPlayer.ServerCall.Sleep(line);
+        }
+    }
+}
 //       "OnRMouseClick": null,
 //       "OnMouseMove": null,
 //       "OnGlobalMouseDown": null,
@@ -2339,7 +2420,15 @@
     }
 }
 //       "OnInit": null,
-//       "OnShow": null,
+//       "OnShow":
+{
+    {
+        {
+            RestBell.Load("art/intrface/ALARMOUT.FRM");
+            RestBellPressed.Load("art/intrface/ALARMIN.FRM");
+        }
+    }
+}
 //       "OnHide": null,
 //       "OnAppear": null,
 //       "OnDisappear": null,
@@ -2347,6 +2436,14 @@
 {
     {
         {
+            bool pressed = (Game.MousePos.x >= AbsolutePos.x + 104 && Game.MousePos.x <= AbsolutePos.x + 131 &&
+                            Game.MousePos.y >= AbsolutePos.y + 1 && Game.MousePos.y <= AbsolutePos.y + 23 && Input::IsMousePressed(MouseButton::Left));
+            if (pressed) {
+                RestBellPressed.Draw(ipos(AbsolutePos.x + 104, AbsolutePos.y + 1));
+            }
+            else {
+                RestBell.Draw(ipos(AbsolutePos.x + 104, AbsolutePos.y + 1));
+            }
         }
     }
 }
@@ -2358,7 +2455,21 @@
 //       "OnLMousePressed": null,
 //       "OnRMousePressed": null,
 //       "OnMouseClick": null,
-//       "OnLMouseClick": null,
+//       "OnLMouseClick":
+{
+    {
+        {
+            if (HasChosen && Chosen.Sleeping) {
+                return;
+            }
+
+            if (Game.MousePos.x >= AbsolutePos.x + 104 && Game.MousePos.x <= AbsolutePos.x + 131 && Game.MousePos.y >= AbsolutePos.y + 1 &&
+                Game.MousePos.y <= AbsolutePos.y + 23) {
+                CurMenu = ::GuiScreens::PipBoy::MenuMode::Rest;
+            }
+        }
+    }
+}
 //       "OnRMouseClick": null,
 //       "OnMouseMove": null,
 //       "OnGlobalMouseDown": null,

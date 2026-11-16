@@ -18,6 +18,12 @@ namespace GuiScreensExt
 // курсор (обычно Default), поэтому при возврате на Game его нужно восстановить.
 CursorType GameCursor = CursorType::Move;
 
+void OpenPipBoyRest()
+{
+    Gui::ShowScreen(GuiScreen::PipBoy);
+    ::GuiScreens::PipBoy::CurMenu = ::GuiScreens::PipBoy::MenuMode::Rest;
+}
+
 // Точка входа модуля: подписываемся на клиентские события для переключения экранов.
 [[ModuleInit]]
 void InitGuiScreensExt()
@@ -214,6 +220,11 @@ void TryExit()
 {
     Gui::Screen? screen = Gui::GetActiveScreen();
     if (screen == null) {
+        return;
+    }
+
+    // ПипБой во время сна нельзя закрыть, пока не закончится выбранный отдых.
+    if (screen.Num == GuiScreen::PipBoy && HasChosen && Chosen.Sleeping) {
         return;
     }
 
