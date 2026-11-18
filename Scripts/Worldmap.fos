@@ -1208,9 +1208,9 @@ Map? GenerateEncounter(CFoundedEncounter fe, Critter[] critters)
 
     for (int i = 0; i < encounter.Groups.length(); i++) {
         int groupNum = encounter.Groups[i];
+        crittersGrouops[i] = array<Critter>();
 
         if (groupNum == GROUP_Player) {
-            crittersGrouops[i] = array<Critter>();
             Critter[] crGroup = crittersGrouops[i];
             crGroup.resize(critters.length());
             for (int k = 0; k < critters.length(); k++) {

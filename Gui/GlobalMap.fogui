@@ -754,8 +754,8 @@
             if (!HasChosen) {
                 return;
             }
-            SetPosition(cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalX(int(Chosen.WorldPos.x)),
-                        cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalY(int(Chosen.WorldPos.y)));
+            SetPosition(cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalX(int(::GlobalmapGroup::GetDisplayX())),
+                        cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalY(int(::GlobalmapGroup::GetDisplayY())));
         }
     }
 }
@@ -1621,7 +1621,7 @@
 {
     {
         {
-            return FormatXX(::GameTime::GetDay());
+            return FormatXX(Game.Day);
         }
     }
 }
@@ -1686,7 +1686,7 @@
 {
     {
         {
-            return CodeMonth[::GameTime::GetMonth()];
+            return CodeMonth[Game.Month];
         }
     }
 }
@@ -1756,7 +1756,7 @@
 {
     {
         {
-            return "" + ::GameTime::GetYear();
+            return "" + Game.Year;
         }
     }
 }
@@ -1821,7 +1821,7 @@
 {
     {
         {
-            return FormatXX(::GameTime::GetHour()) + FormatXX(::GameTime::GetMinute());
+            return FormatXX(Game.Hour) + FormatXX(Game.Minute);
         }
     }
 }
@@ -1914,7 +1914,8 @@
 {
     {
         {
-            int timeInMinut = ::GameTime::GetHour() * 60 + ::GameTime::GetMinute();
+            // Кадры WMDIAL начинаются с полудня, а не с полуночи.
+            int timeInMinut = (Game.Hour * 60 + Game.Minute + 12 * 60) % (24 * 60);
             ::GuiScreensExt::NeedSprite(BackgroundImage).SetFrame(timeInMinut / float(24 * 60));
         }
     }

@@ -29,6 +29,62 @@ void InitGlobalmapGroup()
     Game.OnLoop.Subscribe(OnLoop);
 }
 
+// Клиентское сглаживание маркера: сервер двигает группу дискретными шагами,
+// а клиент растягивает каждый шаг на фактический интервал между обновлениями.
+float DisplayX = 0.0f, DisplayY = 0.0f;
+float TweenFromX = 0.0f, TweenFromY = 0.0f;
+float TweenToX = 0.0f, TweenToY = 0.0f;
+nanotime TweenStart = ZERO_NANOTIME;
+int TweenMs = 0;
+bool DisplayActive = false;
+bool HaveGroupData = false;
+nanotime LastGroupUpdate = ZERO_NANOTIME;
+nanotime LastStaleLog = ZERO_NANOTIME;
+
+float GetDisplayX()
+{
+    if (!DisplayActive && HasChosen) {
+        return float(Chosen.WorldPos.x);
+    }
+
+    return DisplayX;
+}
+
+float GetDisplayY()
+{
+    if (!DisplayActive && HasChosen) {
+        return float(Chosen.WorldPos.y);
+    }
+
+    return DisplayY;
+}
+
+void StartGroupTween()
+{
+    nanotime now = Game.FrameTime;
+    int intervalMs = Math::Max(1, Settings.GlobalMap.GlobalMapMoveTime);
+    if (LastGroupUpdate != ZERO_NANOTIME) {
+        int ms = (now - LastGroupUpdate).milliseconds;
+        if (ms >= 1 && ms <= 5000) {
+            intervalMs = ms;
+        }
+    }
+    LastGroupUpdate = now;
+
+    if (!DisplayActive) {
+        DisplayX = float(CurrentGroup.CurX);
+        DisplayY = float(CurrentGroup.CurY);
+        DisplayActive = true;
+    }
+
+    TweenFromX = DisplayX;
+    TweenFromY = DisplayY;
+    TweenToX = float(CurrentGroup.CurX);
+    TweenToY = float(CurrentGroup.CurY);
+    TweenStart = now;
+    TweenMs = Math::Max(intervalMs, 16);
+}
+
 [[Event]]
 void OnLoop()
 {
@@ -37,10 +93,44 @@ void OnLoop()
     }
 
     auto group = GetCurrentGroup();
+
+    if (!HasChosen || HasCurMap) {
+        group.IsMoving = false;
+        HaveGroupData = false;
+        DisplayActive = false;
+        return;
+    }
+
+    if (HaveGroupData) {
+        if (!DisplayActive) {
+            DisplayX = float(group.CurX);
+            DisplayY = float(group.CurY);
+            DisplayActive = true;
+        }
+
+        float t = 1.0f;
+        if (TweenMs > 0) {
+            int elapsedMs = (Game.FrameTime - TweenStart).milliseconds;
+            t = float(elapsedMs) / float(TweenMs);
+            if (t < 0.0f) {
+                t = 0.0f;
+            }
+            if (t > 1.0f) {
+                t = 1.0f;
+            }
+        }
+
+        DisplayX = TweenFromX + (TweenToX - TweenFromX) * t;
+        DisplayY = TweenFromY + (TweenToY - TweenFromY) * t;
+    }
+
     if (group.IsMoving) {
-        if (!HasChosen || HasCurMap) {
-            group.IsMoving = false;
-            return;
+        if (LastStaleLog == ZERO_NANOTIME || Game.FrameTime - LastStaleLog > Time::Seconds(2)) {
+            auto sinceUpdate = Game.FrameTime - LastGroupUpdate;
+            if (sinceUpdate > Time::Seconds(2)) {
+                Game.Log("[GMTRAVEL] client no updates dtime=" + sinceUpdate.milliseconds + " pos=" + int(group.CurX) + "," + int(group.CurY));
+                LastStaleLog = Game.FrameTime;
+            }
         }
 
         group.StepCount++;
@@ -114,6 +204,8 @@ void SetCurrentLocationEntrances(hstring locPid, hstring[] mapEntrances)
 void LoadGlobalMapGroupData(Serializer::Serializer load)
 {
     CurrentGroup.Load(load);
+    HaveGroupData = true;
+    StartGroupTween();
 }
 
 #endif
@@ -188,6 +280,13 @@ void OnCritterIdle(Critter cr)
     if (cr.GetMap() == null) {
         auto group = GetGlobalMapGroup(cr);
         if (cr.Id == group.Rule.Id) {
+            if (group.IsMoving()) {
+                auto since = Game.GetPrecisionTime() - group.ProcessLastTick;
+                if (since > Time::Seconds(2)) {
+                    Game.Log("[GMTRAVEL] idle late dtime=" + since.milliseconds + " pos=" + int(group.CurX) + "," + int(group.CurY));
+                }
+            }
+
             GroupMove(group);
         }
     }
@@ -302,7 +401,12 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
         float lastDist = Tla::Distance(curX, curY, toX, toY);
 
         // Вычисляем скорость
-        float speedPix = speed * float(Settings.GlobalMap.GlobalMapMoveTime) / 1000.0f;
+        int deltaMs = Math::Max(1, Settings.GlobalMap.GlobalMapMoveTime);
+        auto moveGroup = GetGlobalMapGroup(cr);
+        if (moveGroup.ProcessDeltaMs > 0) {
+            deltaMs = moveGroup.ProcessDeltaMs;
+        }
+        float speedPix = speed * float(deltaMs) / 1000.0f;
         float speedAngle = math::atan2(toY - curY, toX - curX);
         float speedX = math::cos(speedAngle) * speedPix;
         float speedY = math::sin(speedAngle) * speedPix;
@@ -414,6 +518,7 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
                 }
 
                 // Останавливаем группу
+                Game.Log("[GMTRAVEL] stop bounds pos=" + curXi + "," + curYi);
                 curX = float(curXi);
                 curY = float(curYi);
                 speed = 0.0f;
@@ -453,6 +558,7 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
 
             if (newXi != curXi || newYi != curYi) {
                 // Останавливаем группу
+                Game.Log("[GMTRAVEL] stop terrain pos=" + oldXi + "," + oldYi + " next=" + newXi + "," + newYi + " relief=" + relief);
                 curX = float(newXi);
                 curY = float(newYi);
                 speed = 0.0f;
@@ -474,6 +580,7 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
             // Проверяем, завершено ли путешествие
             float curDist = Tla::Distance(curX, curY, toX, toY);
             if (curDist <= 0.01f || curDist > lastDist) {
+                Game.Log("[GMTRAVEL] arrived pos=" + int(toX) + "," + int(toY));
                 curX = toX;
                 curY = toY;
                 speed = 0.0f;
@@ -488,6 +595,7 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
 
             if (fuel <= 0 || deterioration >= int(car.Car_MaxDeterioration)) {
                 int str = (fuel <= 0 ? MsgStr::StrCarFuelEmpty : MsgStr::StrCarBroken);
+                Game.Log("[GMTRAVEL] stop car fuel=" + fuel + " det=" + deterioration);
                 Messaging::Info(cr, TextPackKey(TextPackName::Game, "" + (str)));
                 speed = 0.0f;
                 return;
@@ -516,6 +624,7 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
             // Проверка харизмы
             Critter leader = group[0];
             if (int(group.length()) > leader.Charisma + leader.PerkMagneticPersonality) {
+                Game.Log("[GMTRAVEL] stop charisma group=" + group.length() + " charisma=" + leader.Charisma);
                 Messaging::Info(leader, TextPackKey(TextPackName::Game, "" + (MsgStr::StrCritBadCharisma)));
                 speed = 0.0f; // Остановка
                 return;
@@ -762,6 +871,7 @@ class GlobalMapGroup
     bool IsSetMove;
     nanotime TimeCanFollow;
     nanotime ProcessLastTick;
+    int ProcessDeltaMs;
     int EncounterDescriptor;
     nanotime EncounterTick;
     bool EncounterForce;
@@ -849,6 +959,7 @@ class GlobalMapGroup
         IsSetMove = false;
         TimeCanFollow = ZERO_NANOTIME;
         ProcessLastTick = Game.GetPrecisionTime();
+        ProcessDeltaMs = 0;
         EncounterDescriptor = 0;
         EncounterTick = ZERO_NANOTIME;
         EncounterForce = false;
@@ -1077,6 +1188,7 @@ void ProcessGroup(Critter cr, GlobalMapGroup? group, int type) // 13 hits
 
     // Остановка
     if (base_speed > 0.0f && speed <= 0.0f) {
+        Game.Log("[GMTRAVEL] move stopped pos=" + int(group.CurX) + "," + int(group.CurY) + " base=" + base_speed + " speed=" + speed);
         group.Stop();
         ProcessGroup(rule, group, GLOBAL_PROCESS_STOPPED);
         return;
@@ -1088,6 +1200,7 @@ void ProcessGroup(Critter cr, GlobalMapGroup? group, int type) // 13 hits
 
     // Встреча (энкаунтер)
     if (encounter_descriptor > 0) {
+        Game.Log("[GMTRAVEL] encounter start wait=" + wait_for_answer + " pos=" + int(group.CurX) + "," + int(group.CurY));
         group.EncounterDescriptor = encounter_descriptor;
         if (type == GLOBAL_PROCESS_ENTER) {
             InviteGroup(group, 0);
@@ -1383,11 +1496,13 @@ void GroupMove(GlobalMapGroup group) // 3hits
 
         // Принудительное приглашение
         if (group.EncounterForce) {
+            Game.Log("[GMTRAVEL] encounter force pos=" + int(group.CurX) + "," + int(group.CurY));
             InviteGroup(group, 0); // TODO: turnbasedrule->GetDefaultCombat() );
             return;
         }
 
         // Продолжаем движение
+        Game.Log("[GMTRAVEL] encounter resume pos=" + int(group.CurX) + "," + int(group.CurY));
         group.EncounterDescriptor = 0;
         GlobalMapLocations::SetGlobalMapData(GM_INFO_GROUP_PARAM, rule);
         group.ProcessLastTick = tick;
@@ -1403,12 +1518,20 @@ void GroupMove(GlobalMapGroup group) // 3hits
     // Движение
     if (group.IsMoving()) {
         auto dtime = tick - group.ProcessLastTick;
-        if (dtime >= Time::Milliseconds(Settings.GlobalMap.GlobalMapMoveTime)) {
-            if (dtime >= Time::Milliseconds(Settings.GlobalMap.GlobalMapMoveTime * 2)) {
-                dtime = ZERO_TIMESPAN;
+        if (dtime > ZERO_TIMESPAN) {
+            if (dtime > Time::Milliseconds(1500)) {
+                Game.Log("[GMTRAVEL] big dtime=" + dtime.milliseconds + " pos=" + int(group.CurX) + "," + int(group.CurY) + " to=" + int(group.ToX) + "," + int(group.ToY));
             }
 
-            group.ProcessLastTick = tick - Time::Milliseconds(dtime.milliseconds % Settings.GlobalMap.GlobalMapMoveTime);
+            group.ProcessLastTick = tick;
+
+            // Шаг по фактически прошедшему времени: запоздавший/пропущенный тик
+            // не превращается в провал скорости.
+            group.ProcessDeltaMs = dtime.milliseconds;
+            int maxDelta = Math::Max(1, Settings.GlobalMap.GlobalMapMoveTime) * 4;
+            if (group.ProcessDeltaMs > maxDelta) {
+                group.ProcessDeltaMs = maxDelta;
+            }
 
             if (rule.ControlledByPlayer && rule.IsDead()) // && rule.IsOffline() )
             {

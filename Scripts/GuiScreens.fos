@@ -4092,8 +4092,8 @@ namespace GlobalMap
             if (!HasChosen) {
                 return;
             }
-            SetPosition(cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalX(int(Chosen.WorldPos.x)),
-                        cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalY(int(Chosen.WorldPos.y)));
+            SetPosition(cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalX(int(::GlobalmapGroup::GetDisplayX())),
+                        cast<GMObjects>(::GuiScreensExt::NeedObject(Parent)).NormalY(int(::GlobalmapGroup::GetDisplayY())));
         }
     };
 
@@ -4349,7 +4349,7 @@ namespace GlobalMap
 
         string get_Text() override
         {
-            return FormatXX(::GameTime::GetDay());
+            return FormatXX(Game.Day);
         }
     };
 
@@ -4368,7 +4368,7 @@ namespace GlobalMap
 
         string get_Text() override
         {
-            return CodeMonth[::GameTime::GetMonth()];
+            return CodeMonth[Game.Month];
         }
     };
 
@@ -4385,7 +4385,7 @@ namespace GlobalMap
 
         string get_Text() override
         {
-            return "" + ::GameTime::GetYear();
+            return "" + Game.Year;
         }
     };
 
@@ -4402,7 +4402,7 @@ namespace GlobalMap
 
         string get_Text() override
         {
-            return FormatXX(::GameTime::GetHour()) + FormatXX(::GameTime::GetMinute());
+            return FormatXX(Game.Hour) + FormatXX(Game.Minute);
         }
     };
 
@@ -4418,7 +4418,8 @@ namespace GlobalMap
 
         void OnDraw() override
         {
-            int timeInMinut = ::GameTime::GetHour() * 60 + ::GameTime::GetMinute();
+            // Кадры WMDIAL начинаются с полудня, а не с полуночи.
+            int timeInMinut = (Game.Hour * 60 + Game.Minute + 12 * 60) % (24 * 60);
             ::GuiScreensExt::NeedSprite(BackgroundImage).SetFrame(timeInMinut / float(24 * 60));
         }
     };
