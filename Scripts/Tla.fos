@@ -589,10 +589,16 @@ const int GlobalProcessKick = 7;
 
 // ===== СКОРОСТЬ ПУТЕШЕСТВИЯ ПО ГЛОБАЛЬНОЙ КАРТЕ: ПРАВИТЬ ЗДЕСЬ =====
 // За сколько реальных секунд фишка проходит один квадрат карты.
-const float GLOBAL_MAP_CELL_SECONDS = 4.0f;
+const float GLOBAL_MAP_CELL_SECONDS = 6.5f;
 // Размер квадрата в мировых пикселях (совпадает с GlobalMap.GlobalMapZoneLength).
 const float GLOBAL_MAP_CELL_PIXELS = 50.0f;
 const float GLOBAL_MAP_BASE_SPEED = GLOBAL_MAP_CELL_PIXELS / GLOBAL_MAP_CELL_SECONDS; // px/s
+
+// ===== ВРЕМЯ В ПУТИ ПО ГЛОБАЛЬНОЙ КАРТЕ: ПРАВИТЬ ЗДЕСЬ =====
+// Сколько игровых часов проходит за один квадрат пути (замер в Fallout 2 CE: 8.5 ч).
+const float GLOBAL_MAP_SQUARE_HOURS = 25.0f;
+// 36000 тиков = 1 игровой час; дальше время масштабируется рельефом, машиной и «Следопытом».
+const float GLOBAL_MAP_TICKS_PER_PIXEL = GLOBAL_MAP_SQUARE_HOURS * 36000.0f / GLOBAL_MAP_CELL_PIXELS;
 
 // Типы перемещения по глобальной карте
 const int GmWalkGround = 0;

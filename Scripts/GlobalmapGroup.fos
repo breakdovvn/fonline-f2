@@ -40,6 +40,14 @@ bool DisplayActive = false;
 bool HaveGroupData = false;
 nanotime LastGroupUpdate = ZERO_NANOTIME;
 nanotime LastStaleLog = ZERO_NANOTIME;
+int LastGroupIntervalMs = 50;
+
+int64 ClockDisplayTicks = 0;
+int64 ClockFromTicks = 0;
+int64 ClockToTicks = 0;
+nanotime ClockStart = ZERO_NANOTIME;
+int ClockMs = 0;
+bool ClockActive = false;
 
 float GetDisplayX()
 {
@@ -70,6 +78,7 @@ void StartGroupTween()
         }
     }
     LastGroupUpdate = now;
+    LastGroupIntervalMs = intervalMs;
 
     if (!DisplayActive) {
         DisplayX = float(CurrentGroup.CurX);
@@ -85,6 +94,29 @@ void StartGroupTween()
     TweenMs = Math::Max(intervalMs, 16);
 }
 
+void StartClockTween()
+{
+    int64 target = CurrentGroup.TravelTicks;
+    if (!ClockActive) {
+        ClockDisplayTicks = target;
+        ClockFromTicks = target;
+        ClockToTicks = target;
+        ClockStart = Game.FrameTime;
+        ClockMs = 0;
+        ClockActive = true;
+        return;
+    }
+
+    if (target < ClockDisplayTicks) {
+        target = ClockDisplayTicks;
+    }
+
+    ClockFromTicks = ClockDisplayTicks;
+    ClockToTicks = target;
+    ClockStart = Game.FrameTime;
+    ClockMs = Math::Max(LastGroupIntervalMs, 16);
+}
+
 [[Event]]
 void OnLoop()
 {
@@ -98,6 +130,8 @@ void OnLoop()
         group.IsMoving = false;
         HaveGroupData = false;
         DisplayActive = false;
+        ClockActive = false;
+        ClockDisplayTicks = Game.GameTicks;
         return;
     }
 
@@ -122,6 +156,30 @@ void OnLoop()
 
         DisplayX = TweenFromX + (TweenToX - TweenFromX) * t;
         DisplayY = TweenFromY + (TweenToY - TweenFromY) * t;
+    }
+
+    if (ClockActive) {
+        float ct = 1.0f;
+        if (ClockMs > 0) {
+            int elapsedMs = (Game.FrameTime - ClockStart).milliseconds;
+            ct = float(elapsedMs) / float(ClockMs);
+            if (ct < 0.0f) {
+                ct = 0.0f;
+            }
+            if (ct > 1.0f) {
+                ct = 1.0f;
+            }
+        }
+
+        ClockDisplayTicks = ClockFromTicks + int64(float(ClockToTicks - ClockFromTicks) * ct);
+        if (ct >= 1.0f) {
+            ClockDisplayTicks = ClockToTicks;
+            if (!group.IsMoving) {
+                ClockActive = false;
+            }
+        }
+
+        ::MapTime::UpdateDateTimeImpl();
     }
 
     if (group.IsMoving) {
@@ -149,6 +207,7 @@ class GlobalMapGroupClientInfo
     int ToX, ToY;
     bool IsMoving;
     bool IsEncounter;
+    int64 TravelTicks;
     int StepCount;
     int[] Points;
 
@@ -170,6 +229,7 @@ class GlobalMapGroupClientInfo
         CurX = CurY = ToX = ToY = 0;
         IsMoving = false;
         IsEncounter = false;
+        TravelTicks = 0;
     }
 
     void Load(Serializer::Serializer load)
@@ -181,6 +241,7 @@ class GlobalMapGroupClientInfo
         load.Get(ToY);
         load.Get(IsMoving);
         load.Get(IsEncounter);
+        load.Get(TravelTicks);
     }
 }
 
@@ -205,7 +266,28 @@ void LoadGlobalMapGroupData(Serializer::Serializer load)
 {
     CurrentGroup.Load(load);
     HaveGroupData = true;
+
+    if (!CurrentGroup.IsMoving) {
+        // Остановка: сразу фиксируем фишку и время, без остаточного скольжения.
+        DisplayX = float(CurrentGroup.CurX);
+        DisplayY = float(CurrentGroup.CurY);
+        DisplayActive = true;
+        TweenFromX = DisplayX;
+        TweenFromY = DisplayY;
+        TweenToX = DisplayX;
+        TweenToY = DisplayY;
+        TweenMs = 0;
+
+        ClockDisplayTicks = CurrentGroup.TravelTicks;
+        ClockFromTicks = ClockDisplayTicks;
+        ClockToTicks = ClockDisplayTicks;
+        ClockMs = 0;
+        ClockActive = false;
+        return;
+    }
+
     StartGroupTween();
+    StartClockTween();
 }
 
 #endif
@@ -264,6 +346,7 @@ const int GM_INFO_ZONES_FOG = 0x08;
 const int GM_INFO_ALL = 0x0F;
 const int GM_INFO_FOG = 0x10;
 const int GM_INFO_LOCATION = 0x20;
+const int GM_TRAVEL_TICK_MS = 50;
 
 [[ModuleInit]]
 void InitGlobalmapGroup()
@@ -271,22 +354,23 @@ void InitGlobalmapGroup()
     Game.OnGlobalMapCritterIn.Subscribe(OnGlobalMapCritterIn);
     Game.OnGlobalMapCritterOut.Subscribe(OnGlobalMapCritterOut);
     Game.LoadImage(Tla::ImageRelief, "relief_tla.png");
+    Game.StartTimeEvent(Time::Milliseconds(GM_TRAVEL_TICK_MS), Time::Milliseconds(GM_TRAVEL_TICK_MS), GlobalMapTick);
 }
 
 [[TimeEvent]]
-void OnCritterIdle(Critter cr)
+void GlobalMapTick()
 {
-    // Глобальная карта
-    if (cr.GetMap() == null) {
-        auto group = GetGlobalMapGroup(cr);
-        if (cr.Id == group.Rule.Id) {
-            if (group.IsMoving()) {
-                auto since = Game.GetPrecisionTime() - group.ProcessLastTick;
-                if (since > Time::Seconds(2)) {
-                    Game.Log("[GMTRAVEL] idle late dtime=" + since.milliseconds + " pos=" + int(group.CurX) + "," + int(group.CurY));
-                }
-            }
+    if (Game.SessionPaused || AllGlobalGroups.isEmpty()) {
+        return;
+    }
 
+    Game.Lock();
+    auto groups = AllGlobalGroups.getValues();
+    Game.Unlock();
+
+    for (int i = 0; i < groups.length(); i++) {
+        auto group = groups[i];
+        if (group.IsMoving()) {
             GroupMove(group);
         }
     }
@@ -295,12 +379,6 @@ void OnCritterIdle(Critter cr)
 [[Event]]
 void OnGlobalMapCritterIn(Critter cr)
 {
-    // Тик движения группы нужен только на глобальной карте: держим таймер ленивым,
-    // чтобы не запускать его для всех статичных NPC мира.
-    if (cr.CountTimeEvent(OnCritterIdle) == 0) {
-        cr.StartTimeEvent(Time::Milliseconds(0), Time::Milliseconds(1000), OnCritterIdle);
-    }
-
     int tripId = cr.GlobalMapTripId;
     bool createdGroup = false;
     Game.Lock();
@@ -333,10 +411,6 @@ void OnGlobalMapCritterIn(Critter cr)
 [[Event]]
 void OnGlobalMapCritterOut(Critter cr)
 {
-    if (cr.CountTimeEvent(OnCritterIdle) != 0) {
-        cr.StopTimeEvent(OnCritterIdle);
-    }
-
     int tripId = cr.GlobalMapTripId;
     Critter[] members = {};
     if (!SnapshotGroupForMutation(cr, tripId, members)) {
@@ -379,6 +453,99 @@ void OnGlobalMapCritterOut(Critter cr)
     Game.Unlock();
 }
 
+// Время пути: как в F2CE, время идёт пропорционально пройденным пикселям,
+// а рельеф/транспорт/«Следопыт» меняют его так же, как скорость.
+nanotime LastTravelTimeFrame = ZERO_NANOTIME;
+
+float GetGroundSpeedMod(int relief)
+{
+    switch (relief) {
+    case 0x0:
+        return 1.00f;
+    case 0x1:
+        return 0.55f;
+    case 0x2:
+        return 0.60f;
+    case 0x3:
+        return 0.65f;
+    case 0x4:
+        return 0.70f;
+    case 0x5:
+        return 0.75f;
+    case 0x6:
+        return 0.80f;
+    case 0x7:
+        return 0.85f;
+    case 0x8:
+        return 0.90f;
+    case 0x9:
+        return 0.95f;
+    case 0xA:
+        return 1.00f;
+    case 0xB:
+        return 1.10f;
+    case 0xC:
+        return 1.20f;
+    case 0xD:
+        return 1.30f;
+    case 0xE:
+        return 1.40f;
+    case 0xF:
+        return 1.50f;
+    default:
+        return 1.00f;
+    }
+}
+
+float ApplyCarSpeedMod(float speedMod, Item? car)
+{
+    if (car == null || speedMod == 1.0f) {
+        return speedMod;
+    }
+
+    float pass = float(car.Car_Passability);
+    if (pass > 100.0f && speedMod < 1.0f) {
+        speedMod += (1.0f - speedMod) * (pass - 100.0f) / 100.0f;
+    }
+    else if (pass > 100.0f && speedMod > 1.0f) {
+        speedMod -= (speedMod - 1.0f) * (pass - 100.0f) / 100.0f;
+    }
+    else if (pass < 100.0f && speedMod < 1.0f) {
+        speedMod -= (1.0f - speedMod) * (100.0f - pass) / 100.0f;
+    }
+    else if (pass < 100.0f && speedMod > 1.0f) {
+        speedMod += (speedMod - 1.0f) * (100.0f - pass) / 100.0f;
+    }
+
+    return speedMod;
+}
+
+void AdvanceGlobalMapGameTimeTicks(Critter leader, int64 ticks)
+{
+    if (!leader.ControlledByPlayer || ticks <= 0) {
+        return;
+    }
+
+    // Несколько групп в одном кадре не должны ускорять мировое время.
+    nanotime frame = Game.FrameTime;
+    if (frame == LastTravelTimeFrame) {
+        return;
+    }
+    LastTravelTimeFrame = frame;
+
+    int64 rank = int64(leader.PerkPathfinder);
+    if (rank > 0) {
+        ticks -= ticks * rank / 4; // Следопыт: -25% времени за ранг
+    }
+
+    if (ticks <= 0) {
+        return;
+    }
+
+    Game.GameTicks += ticks;
+    Game.SetSynchronizedTime(Game.SynchronizedTime + timespan(ticks * 100, Time::MillisecondsPlace));
+}
+
 // int processType    - см. события глобальной карты в _defines.fos;
 // Critter cr        - кто вызвал функцию, чаще всего лидер группы;
 // Item car          - транспорт группы, может быть null;
@@ -413,78 +580,9 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
 
         float speedMod = 1.0f;
         if (movementType == Tla::GmWalkGround) {
-            // Модификаторы скорости
-            //  F   E   D   C   B   A   9    8   7    6   5    4   3    2   1    0
-            // 1.5 1.4 1.3 1.2 1.1 1.0 0.95 0.9 0.85 0.8 0.75 0.7 0.65 0.6 0.55 0.0
-            switch (Worldmap::GetGlobalMapRelief(curXi, curYi)) {
-            case 0x0:
-                speedMod = 1.00f;
-                break;
-            case 0x1:
-                speedMod = 0.55f;
-                break;
-            case 0x2:
-                speedMod = 0.60f;
-                break;
-            case 0x3:
-                speedMod = 0.65f;
-                break;
-            case 0x4:
-                speedMod = 0.70f;
-                break;
-            case 0x5:
-                speedMod = 0.75f;
-                break;
-            case 0x6:
-                speedMod = 0.80f;
-                break;
-            case 0x7:
-                speedMod = 0.85f;
-                break;
-            case 0x8:
-                speedMod = 0.90f;
-                break;
-            case 0x9:
-                speedMod = 0.95f;
-                break;
-            case 0xA:
-                speedMod = 1.00f;
-                break;
-            case 0xB:
-                speedMod = 1.10f;
-                break;
-            case 0xC:
-                speedMod = 1.20f;
-                break;
-            case 0xD:
-                speedMod = 1.30f;
-                break;
-            case 0xE:
-                speedMod = 1.40f;
-                break;
-            case 0xF:
-                speedMod = 1.50f;
-                break;
-            default:
-                break;
-            }
+            speedMod = GetGroundSpeedMod(Worldmap::GetGlobalMapRelief(curXi, curYi));
         }
-
-        if (car != null && speedMod != 1.0f) {
-            float pass = float(car.Car_Passability);
-            if (pass > 100.0f && speedMod < 1.0f) {
-                speedMod += (1.0f - speedMod) * (pass - 100.0f) / 100.0f;
-            }
-            else if (pass > 100.0f && speedMod > 1.0f) {
-                speedMod -= (speedMod - 1.0f) * (pass - 100.0f) / 100.0f;
-            }
-            else if (pass < 100.0f && speedMod < 1.0f) {
-                speedMod -= (1.0f - speedMod) * (100.0f - pass) / 100.0f;
-            }
-            else if (pass < 100.0f && speedMod > 1.0f) {
-                speedMod += (speedMod - 1.0f) * (100.0f - pass) / 100.0f;
-            }
-        }
+        speedMod = ApplyCarSpeedMod(speedMod, car);
 
         // Применяем шаг
         curX += speedX * speedMod;
@@ -494,6 +592,12 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
         int oldYi = curYi;
         curXi = int(curX); // Округление
         curYi = int(curY); // Округление
+
+        int64 travelTicks = 0;
+        float speedMultiplier = speed / Tla::GLOBAL_MAP_BASE_SPEED;
+        if (speedMultiplier < 0.01f) {
+            speedMultiplier = 0.01f;
+        }
 
         // Проверяем новую позицию
         if (oldXi != curXi || oldYi != curYi) {
@@ -553,7 +657,20 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
 
                     newXi = xxi;
                     newYi = yyi;
+
+                    // Время считаем по тому же тайлу, что и шаг движения:
+                    // так замедление маркера и рост игрового времени пропорциональны.
+                    float pixelMod = (movementType == Tla::GmWalkGround ? GetGroundSpeedMod(relief) : 1.0f);
+                    pixelMod = ApplyCarSpeedMod(pixelMod, car);
+                    if (pixelMod < 0.01f) {
+                        pixelMod = 0.01f;
+                    }
+                    travelTicks += int64(Tla::GLOBAL_MAP_TICKS_PER_PIXEL / (speedMultiplier * pixelMod));
                 }
+            }
+
+            if (travelTicks > 0) {
+                AdvanceGlobalMapGameTimeTicks(cr, travelTicks);
             }
 
             if (newXi != curXi || newYi != curYi) {
@@ -601,9 +718,12 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
                 return;
             }
 
-            // Значения транспорта рассчитаны на вызов каждые 500 мс
-            fuel -= car.Car_FuelConsumption * Settings.GlobalMap.GlobalMapMoveTime / 500;
-            deterioration += car.Car_DeteriorationRate * Settings.GlobalMap.GlobalMapMoveTime / 500;
+            // Топливо и износ: раз в секунду, как при старом тике 1000 мс.
+            int ticksPerSecond = Math::Max(1, 1000 / GM_TRAVEL_TICK_MS);
+            if (cr.GlobalMapMoveCounter % ticksPerSecond == 0) {
+                fuel -= car.Car_FuelConsumption * 2;
+                deterioration += car.Car_DeteriorationRate * 2;
+            }
             if (fuel < 0) {
                 fuel = 0;
             }
@@ -619,7 +739,8 @@ void GlobalProcess(int processType, Critter cr, Item? car, float& curX, float& c
         }
 
         cr.GlobalMapMoveCounter += 1;
-        if (cr.GlobalMapMoveCounter % (Settings.GlobalMap.EncounterTime / Settings.GlobalMap.GlobalMapMoveTime) == 0) {
+        int encounterTicks = Math::Max(1, Settings.GlobalMap.EncounterTime / GM_TRAVEL_TICK_MS);
+        if (cr.GlobalMapMoveCounter % encounterTicks == 0) {
             Critter[] group = GlobalmapGroupExtended::GetGlobalGroup(cr);
             // Проверка харизмы
             Critter leader = group[0];
@@ -981,6 +1102,7 @@ class GlobalMapGroup
         save.Set(int(ToY));
         save.Set(IsMoving());
         save.Set(IsEncounter());
+        save.Set(Game.GameTicks);
     }
 };
 
@@ -1473,9 +1595,7 @@ void GroupSetMove(GlobalMapGroup group, float to_x, float to_y, float speed) // 
 
     GlobalMapLocations::SetGlobalMapData(GM_INFO_GROUP_PARAM, group.Rule);
     // group->Rule->SendA_GlobalInfo( group, GM_INFO_GROUP_PARAM );
-    if (Game.GetPrecisionTime() > group.ProcessLastTick + Time::Milliseconds(Settings.GlobalMap.GlobalMapMoveTime)) {
-        group.ProcessLastTick = Game.GetPrecisionTime();
-    }
+    group.ProcessLastTick = Game.GetPrecisionTime();
 
     if (!group.IsSetMove) {
         group.IsSetMove = true;
